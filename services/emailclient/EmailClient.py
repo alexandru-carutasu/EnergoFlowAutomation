@@ -1,7 +1,7 @@
-
-
 import imaplib
+import logging
 
+logging.basicConfig(format='%(levelname)s: [%(asctime)s]:: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %I:%M:%S %p')
 
 class EmailClient:
     def __init__(self, host, port, user, password):
@@ -19,11 +19,13 @@ class EmailClient:
             mail.select("inbox")
             self.connection = mail
             self.connectionStatus = "Connected"
-            print("Successfully connected to email server.")
+            logging.info("Successfully connected to email server.")
         except Exception as e:
-            print(f"Failed to connect to email server: {e}")
+            logging.error(f"Failed to connect to email server: {e}")
             self.connection = None
             self.connectionStatus = "Connection failed"
+            
+    
             
     def disconnect(self):
         if self.connection:
@@ -31,4 +33,4 @@ class EmailClient:
             self.connection = None
             self.connectionStatus = "Disconnected"
         
-        print("Successfully disconnected from email server.")
+        logging.info("Successfully disconnected from email server.")

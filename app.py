@@ -4,16 +4,18 @@ from flask import Flask, config
 from config import PORT
 from services.emailclient.EmailClient import EmailClient
 from config import IMAP_SERVER, IMAP_PORT, IMAP_ADDRESS, IMAP_PASSWORD
+import logging
 
 app = Flask(__name__)
+logging.basicConfig(format='%(levelname)s: [%(asctime)s]:: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %I:%M:%S %p')
 
 emailClient = EmailClient(IMAP_SERVER, IMAP_PORT, IMAP_ADDRESS, IMAP_PASSWORD)
 
 def runImbalanceImport():
-    print("Running imbalance import...")
+    logging.info("Running imbalance import...")
     
 def runEmailImport():
-    print("Running email import...")
+    logging.info("Running email import...")
     emailClient.connect()
     emailClient.disconnect()
     
