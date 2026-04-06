@@ -1,6 +1,8 @@
 import imaplib
 import logging
 
+from config import FORECAST_ADDRESS, FORECAST_TAG, 
+
 logging.basicConfig(format='%(levelname)s: [%(asctime)s]:: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %I:%M:%S %p')
 
 class EmailClient:
@@ -25,12 +27,79 @@ class EmailClient:
             self.connection = None
             self.connectionStatus = "Connection failed"
             
+    def isConnected(self):
+        return self.connection is not None and self.connectionStatus == "Connected"        
     
-            
     def disconnect(self):
-        if self.connection:
+        if self.isConnected():
             self.connection.logout()
             self.connection = None
             self.connectionStatus = "Disconnected"
         
         logging.info("Successfully disconnected from email server.")
+    
+
+    def runEmailImport(self):
+        if not self.isConnected():
+            self.connect()
+        
+        try:
+            logging.info("Running email import...")
+            self.connection.select("inbox")
+
+            status, messages = self.connection.uid('SEARCH', None, 'UNSEEN')
+            if status != 'OK':
+                raise Exception("Error searching Inbox.")
+
+            email_uids = messages[0].split()
+            xlsx_files = []
+
+            for uid in email_uids:
+                status, msg_data = self.connection.uid('FETCH', uid, '(RFC822)')
+                if status != 'OK':
+                    raise Exception("Error fetching mail.")
+
+                for response_part in msg_data:
+                    if isinstance(response_part, tuple):
+                        msg, sender, email_timestamp, email_address, subject = self.get_mail_data(response_part)
+
+                        if self.mail_is_forecast(subject, email_address):
+                            self.parse_forecast_mail(msg, uid, xlsx_files, email_timestamp)
+                        elif False: # Placeholder for imbalance mail parsing
+                            pass
+
+                            
+                # Mark the email as unread (use UID)
+                self.connection.uid('STORE', uid, '-FLAGS', '\\Seen')
+        
+            return xlsx_files
+        
+        except Exception as e:
+            logging.error(f"Error during email import: {e}")
+            
+    def get_mail_data(self, response_part):
+        msg = self.connection.message_from_bytes(response_part[1])
+        sender = msg.get("From")
+        date_header = msg.get("Date")
+        email_timestamp = self.connection.parsedate_to_datetime(date_header)  # datetime object
+
+        email_address = sender.split()[-1]
+        email_address = email_address[1:-1]
+        
+        subject = self.get_mail_subject(msg)
+
+        return msg, sender, email_timestamp, email_address, subject
+    
+    def mail_is_forecast(self, subject, email_address):
+        return (email_address == FORECAST_ADDRESS and subject.__contains__("Production forecast"))
+
+    def parse_forecast_mail(self, msg, uid, xlsx_files, email_timestamp):
+        for part in msg.walk():
+            if part.get_content_maintype() == 'multipart':
+                continue
+            if part.get('Content-Disposition') is None:
+                continue
+            file_name = part.get_filename()
+            if file_name.endswith('.xlsx'):
+                data = part.get_payload(decode=True)
+                xlsx_files.append((file_name, data, uid, FORECAST_TAG, FORECAST_ADDRESS, email_timestamp))

@@ -17,6 +17,7 @@ def runImbalanceImport():
 def runEmailImport():
     logging.info("Running email import...")
     emailClient.connect()
+    xlsx_files = emailClient.runEmailImport()
     emailClient.disconnect()
     
 
