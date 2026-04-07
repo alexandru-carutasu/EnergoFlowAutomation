@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}EnergoFlow{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>⚡ EnergoFlow</h2>
+            </div>
+            <ul class="nav-links">
+                <li class="{{ 'active' if request.endpoint == 'main.dashboard' }}">
+                    <a href="{{ url_for('main.dashboard') }}">📊 Dashboard</a>
+                </li>
+                <li class="{{ 'active' if request.endpoint and 'client' in request.endpoint }}">
+                    <a href="{{ url_for('main.clients_list') }}">👥 Clienți</a>
+                </li>
+                <li class="{{ 'active' if request.endpoint and 'plant' in request.endpoint }}">
+                    <a href="{{ url_for('main.plants_list') }}">🏭 Parcuri</a>
+                </li>
+                <li class="{{ 'active' if request.endpoint and 'measurement' in request.endpoint }}">
+                    <a href="{{ url_for('main.measurements_view') }}">📈 Măsurători</a>
+                </li>
+                <li class="{{ 'active' if request.endpoint and 'imbalance' in request.endpoint }}">
+                    <a href="{{ url_for('main.imbalance_view') }}">💰 Prețuri Dezechilibru</a>
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <span>v0.1.0</span>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

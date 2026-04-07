@@ -1,7 +1,7 @@
 import imaplib
 import logging
 
-from config import FORECAST_ADDRESS, FORECAST_TAG, 
+from config import FORECAST_ADDRESS, FORECAST_TAG
 
 logging.basicConfig(format='%(levelname)s: [%(asctime)s]:: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %I:%M:%S %p')
 
