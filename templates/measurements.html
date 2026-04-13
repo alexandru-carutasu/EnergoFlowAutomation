@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Măsurători – EnergoFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📈 Măsurători</h1>
+</div>
+
+<form class="filters" method="GET">
+    <div class="form-group">
+        <label for="plant_id">Parc</label>
+        <select id="plant_id" name="plant_id">
+            <option value="">– Toate –</option>
+            {% for p in plants %}
+            <option value="{{ p.id }}" {{ 'selected' if selected_plant == p.id }}>{{ p.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="date">Dată</label>
+        <input type="date" id="date" name="date" value="{{ selected_date or '' }}">
+    </div>
+    <button type="submit" class="btn btn-primary">🔍 Filtrează</button>
+</form>
+
+{% if measurements %}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Parc</th>
+                <th>Dată</th>
+                <th>Interval</th>
+                <th>Forecast</th>
+                <th>Producție</th>
+                <th>Δ (Dezechilibru)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in measurements %}
+            <tr>
+                <td>{{ m.id }}</td>
+                <td>{{ m.plant.name if m.plant else '?' }}</td>
+                <td>{{ m.date }}</td>
+                <td>{{ m.interval }}</td>
+                <td>{{ m.forecast_val if m.forecast_val is not none else '–' }}</td>
+                <td>{{ m.prod_val if m.prod_val is not none else '–' }}</td>
+                <td>
+                    {% if m.forecast_val is not none and m.prod_val is not none %}
+                        {% set delta = m.prod_val - m.forecast_val %}
+                        <span class="badge {{ 'badge-green' if delta >= 0 else 'badge-red' }}">
+                            {{ "%.2f"|format(delta) }}
+                        </span>
+                    {% else %}
+                        –
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="icon">📈</div>
+    <p>Nicio măsurătoare găsită. Selectează un parc și o dată.</p>
+</div>
+{% endif %}
+{% endblock %}

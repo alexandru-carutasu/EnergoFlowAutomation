@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Parcuri – EnergoFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🏭 Parcuri Energetice</h1>
+    <a href="{{ url_for('main.plants_add') }}" class="btn btn-primary">+ Adaugă Parc</a>
+</div>
+
+{% if plants %}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Nume Parc</th>
+                <th>Client</th>
+                <th>Max PWR (MW)</th>
+                <th>Acțiuni</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in plants %}
+            <tr>
+                <td>{{ p.id }}</td>
+                <td>{{ p.name }}</td>
+                <td>
+                    {% if p.client %}
+                        <span class="badge badge-blue">{{ p.client.name }}</span>
+                    {% else %}
+                        <span class="badge badge-red">?</span>
+                    {% endif %}
+                </td>
+                <td>{{ p.max_pwr }} MW</td>
+                <td class="actions">
+                    <a href="{{ url_for('main.plants_edit', plant_id=p.id) }}" class="btn btn-sm btn-ghost">✏️ Edit</a>
+                    <form method="POST" action="{{ url_for('main.plants_delete', plant_id=p.id) }}" style="display:inline" onsubmit="return confirm('Ștergi parcul {{ p.name }}?')">
+                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="icon">🏭</div>
+    <p>Niciun parc energetic.</p>
+    <a href="{{ url_for('main.plants_add') }}" class="btn btn-primary">Adaugă primul parc</a>
+</div>
+{% endif %}
+{% endblock %}
