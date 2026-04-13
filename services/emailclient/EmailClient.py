@@ -132,6 +132,3 @@ class EmailClient:
                 data = part.get_payload(decode=True)
                 logging.info(f"Found IBD email with attachment: {file_name}")
                 xlsx_files.append((file_name, data, uid, IBD_TAG, IBD_ADDRESS, email_timestamp))
-            if file_name.endswith('.xlsx'):
-                data = part.get_payload(decode=True)
-                xlsx_files.append((file_name, data, uid, IBD_TAG, IBD_ADDRESS, email_timestamp))
