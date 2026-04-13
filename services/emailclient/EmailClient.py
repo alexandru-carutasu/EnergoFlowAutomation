@@ -1,7 +1,7 @@
 import imaplib
 import logging
 
-from config import FORECAST_ADDRESS, FORECAST_TAG, 
+from config import FORECAST_ADDRESS, FORECAST_TAG, IBD_ADDRESS, IBD_TAG
 
 logging.basicConfig(format='%(levelname)s: [%(asctime)s]:: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %I:%M:%S %p')
 
@@ -65,8 +65,8 @@ class EmailClient:
 
                         if self.mail_is_forecast(subject, email_address):
                             self.parse_forecast_mail(msg, uid, xlsx_files, email_timestamp)
-                        elif False: # Placeholder for imbalance mail parsing
-                            pass
+                        elif self.mail_is_ibd(subject, email_address):
+                            self.parse_ibd_mail(msg, uid, xlsx_files, email_timestamp)
 
                             
                 # Mark the email as unread (use UID)
@@ -103,3 +103,17 @@ class EmailClient:
             if file_name.endswith('.xlsx'):
                 data = part.get_payload(decode=True)
                 xlsx_files.append((file_name, data, uid, FORECAST_TAG, FORECAST_ADDRESS, email_timestamp))
+
+    def mail_is_ibd(self, subject, email_address):
+        return (email_address == IBD_ADDRESS and subject.__contains__("Actual Production Data"))
+    
+    def parse_ibd_mail(self, msg, uid, xlsx_files, email_timestamp):
+        for part in msg.walk():
+            if part.get_content_maintype() == 'multipart':
+                continue
+            if part.get('Content-Disposition') is None:
+                continue
+            file_name = part.get_filename()
+            if file_name.endswith('.xlsx'):
+                data = part.get_payload(decode=True)
+                xlsx_files.append((file_name, data, uid, IBD_TAG, IBD_ADDRESS, email_timestamp))
