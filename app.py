@@ -4,7 +4,17 @@ from flask import Flask
 from config import PORT
 from services.emailclient.EmailClient import EmailClient
 from services.fileprocessator.FileProcessator import FileProcessator
-from config import IMAP_SERVER, IMAP_PORT, IMAP_ADDRESS, IMAP_PASSWORD
+from services.dropboxclient.DropboxClient import DropboxClient
+from config import (
+    IMAP_SERVER,
+    IMAP_PORT,
+    IMAP_ADDRESS,
+    IMAP_PASSWORD,
+    DROPBOX_APP_KEY,
+    DROPBOX_APP_SECRET,
+    DROPBOX_TOKEN_FILE,
+    DROPBOX_EVAL_FILE_PATH,
+)
 from migrate import run_migration
 from routes import bp as routes_bp, init_routes
 import logging
@@ -15,6 +25,12 @@ logging.basicConfig(format='%(levelname)s: [%(asctime)s]:: %(message)s', level=l
 
 emailClient = EmailClient(IMAP_SERVER, IMAP_PORT, IMAP_ADDRESS, IMAP_PASSWORD)
 fileProcessator = FileProcessator()
+dropboxClient = DropboxClient(
+    DROPBOX_APP_KEY,
+    DROPBOX_APP_SECRET,
+    DROPBOX_TOKEN_FILE,
+    DROPBOX_EVAL_FILE_PATH,
+)
 
 def runImbalanceImport():
     logging.info("Running imbalance import...")

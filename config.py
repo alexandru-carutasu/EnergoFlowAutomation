@@ -31,3 +31,9 @@ DB_NAME = os.getenv("DB_NAME", "energoflow")
 DATABASE_URL = (
     f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 )
+
+# -- Dropbox API --
+DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY")
+DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
+DROPBOX_TOKEN_FILE = os.getenv("DROPBOX_TOKEN_FILE", "dropbox_token.json")
+DROPBOX_EVAL_FILE_PATH = os.getenv("DROPBOX_EVAL_FILE_PATH", ".")
