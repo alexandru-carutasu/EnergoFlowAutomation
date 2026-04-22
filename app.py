@@ -5,6 +5,7 @@ from config import PORT
 from services.emailclient.EmailClient import EmailClient
 from services.fileprocessator.FileProcessator import FileProcessator
 from services.dropboxclient.DropboxClient import DropboxClient
+from services.importclient.ImportClient import ImportClient
 from config import (
     IMAP_SERVER,
     IMAP_PORT,
@@ -31,9 +32,16 @@ dropboxClient = DropboxClient(
     DROPBOX_TOKEN_FILE,
     DROPBOX_EVAL_FILE_PATH,
 )
+db = None
 
 def runImbalanceImport():
     logging.info("Running imbalance import...")
+    if db is None:
+        logging.error("DbManager is not initialized. Skipping imbalance import.")
+        return
+    importer = ImportClient(db)
+    imported = importer.import_latest_prices()
+    logging.info("Imported %s imbalance price record(s).", imported)
 
 def download_files(xlsx_files):
     try:
@@ -79,7 +87,7 @@ if __name__ == '__main__':
     
     scheduler = BackgroundScheduler()
     scheduler.add_job(func=runImbalanceImport, trigger="interval", minutes=15, max_instances=1)
-    scheduler.add_job(func=runEmailImport, trigger="interval", seconds=10, max_instances=1)
+    scheduler.add_job(func=runEmailImport, trigger="interval", minutes=10, max_instances=1)
     scheduler.start()
     
     logging.info("🌐 EnergoFlow running on http://127.0.0.1:%s", PORT)
