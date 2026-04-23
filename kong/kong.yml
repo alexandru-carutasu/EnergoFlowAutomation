@@ -1,0 +1,60 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+
+  - name: auth-service
+    url: http://auth-service:5001
+    connect_timeout: 5000
+    read_timeout: 10000
+    routes:
+      - name: auth-api
+        paths:
+          - /auth
+        strip_path: false
+        methods:
+          - POST
+          - GET
+
+  - name: api-service
+    url: http://api-service:5000
+    connect_timeout: 5000
+    read_timeout: 30000
+    routes:
+      - name: web-dashboard
+        paths:
+          - /
+        strip_path: false
+
+  - name: adminer
+    url: http://adminer:8080
+    routes:
+      - name: adminer-ui
+        paths:
+          - /adminer
+        strip_path: true
+
+plugins:
+  # Rate-limiting on auth endpoints to prevent brute-force
+  - name: rate-limiting
+    service: auth-service
+    config:
+      minute: 30
+      policy: local
+
+  # CORS for the web dashboard
+  - name: cors
+    service: api-service
+    config:
+      origins:
+        - "*"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+      headers:
+        - Accept
+        - Authorization
+        - Content-Type
+      max_age: 3600

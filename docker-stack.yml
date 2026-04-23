@@ -1,0 +1,263 @@
+version: "3.8"
+
+# ── Docker Swarm stack ────────────────────────────────────────────────────────
+# Deploy:  docker stack deploy -c docker-stack.yml energoflow --with-registry-auth
+# Requires images pre-built and pushed by CI/CD to ${REGISTRY}.
+# Secrets must be created before deploying:
+#   printf 'changeme' | docker secret create db_password -
+#   printf 'change-me-in-production' | docker secret create jwt_secret -
+
+x-deploy-worker: &deploy-worker
+  replicas: 2
+  update_config:
+    parallelism: 1
+    delay: 10s
+    order: start-first
+  restart_policy:
+    condition: on-failure
+    delay: 5s
+    max_attempts: 3
+  placement:
+    constraints:
+      - node.role == worker
+
+x-deploy-manager: &deploy-manager
+  replicas: 1
+  restart_policy:
+    condition: on-failure
+    delay: 5s
+  placement:
+    constraints:
+      - node.role == manager
+
+services:
+
+  # ── Own microservices ───────────────────────────────────────────────────────
+
+  db-service:
+    image: ${REGISTRY:-registry.gitlab.com/energoflow}/db-service:${VERSION:-latest}
+    environment:
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: root            # root needed so migrate.py can CREATE DATABASE
+      DB_NAME: energoflow
+    secrets:
+      - db_password
+    networks:
+      - backend
+      - data
+      - monitoring
+    deploy:
+      <<: *deploy-manager   # single instance — manages migrations
+      labels:
+        - "prometheus.scrape=true"
+        - "prometheus.port=5003"
+
+  auth-service:
+    image: ${REGISTRY:-registry.gitlab.com/energoflow}/auth-service:${VERSION:-latest}
+    environment:
+      DB_SERVICE_URL: http://db-service:5003
+    secrets:
+      - jwt_secret
+    networks:
+      - frontend
+      - backend
+      - monitoring
+    deploy:
+      <<: *deploy-worker
+      labels:
+        - "prometheus.scrape=true"
+        - "prometheus.port=5001"
+
+  api-service:
+    image: ${REGISTRY:-registry.gitlab.com/energoflow}/api-service:${VERSION:-latest}
+    environment:
+      DB_SERVICE_URL: http://db-service:5003
+      AUTH_SERVICE_URL: http://auth-service:5001
+    secrets:
+      - source: jwt_secret
+        target: SECRET_KEY
+    networks:
+      - frontend
+      - backend
+      - monitoring
+    deploy:
+      <<: *deploy-worker
+      labels:
+        - "prometheus.scrape=true"
+        - "prometheus.port=5000"
+
+  scheduler-service:
+    image: ${REGISTRY:-registry.gitlab.com/energoflow}/scheduler-service:${VERSION:-latest}
+    environment:
+      DB_SERVICE_URL: http://db-service:5003
+      IMAP_SERVER: ${IMAP_SERVER}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_ADDRESS: ${IMAP_ADDRESS}
+      IMAP_PASSWORD: ${IMAP_PASSWORD}
+      FORECAST_ADDRESS: ${FORECAST_ADDRESS}
+      IBD_ADDRESS: ${IBD_ADDRESS}
+      DROPBOX_APP_KEY: ${DROPBOX_APP_KEY}
+      DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET}
+      DROPBOX_TOKEN_FILE: ${DROPBOX_TOKEN_FILE:-dropbox_token.json}
+      DROPBOX_EVAL_FILE_PATH: ${DROPBOX_EVAL_FILE_PATH:-.}
+    networks:
+      - backend
+      - monitoring
+    deploy:
+      replicas: 1           # single scheduler to avoid duplicate jobs
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      placement:
+        constraints:
+          - node.role == worker
+      labels:
+        - "prometheus.scrape=true"
+        - "prometheus.port=5002"
+
+  # ── Database ────────────────────────────────────────────────────────────────
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_password
+      MYSQL_DATABASE: energoflow
+      MYSQL_USER: energoflow
+      MYSQL_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - data
+    deploy:
+      <<: *deploy-manager
+
+  # ── DB management utility (Adminer) ────────────────────────────────────────
+
+  adminer:
+    image: adminer:latest
+    networks:
+      - data
+      - frontend
+    deploy:
+      <<: *deploy-manager
+      labels:
+        - "traefik.enable=false"
+
+  # ── API Gateway (Kong — DB-less) ────────────────────────────────────────────
+
+  kong:
+    image: kong:3.6
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "127.0.0.1:8001"   # admin locked to localhost in production
+    configs:
+      - source: kong_config
+        target: /usr/local/kong/declarative/kong.yml
+    ports:
+      - target: 8000
+        published: 8000
+        mode: host
+    networks:
+      - frontend
+    deploy:
+      <<: *deploy-manager
+
+  # ── Cluster management (Portainer) ─────────────────────────────────────────
+
+  portainer-agent:
+    image: portainer/agent:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    networks:
+      - management
+    deploy:
+      mode: global   # one agent per node
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    command: -H tcp://tasks.portainer-agent:9001 --tlsskipverify
+    volumes:
+      - portainer_data:/data
+    ports:
+      - target: 9000
+        published: 9000
+        mode: host
+    networks:
+      - management
+    deploy:
+      <<: *deploy-manager
+
+  # ── Monitoring ──────────────────────────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:latest
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - prometheus_data:/prometheus
+    networks:
+      - monitoring
+    deploy:
+      <<: *deploy-manager
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - target: 3000
+        published: 3000
+        mode: host
+    networks:
+      - monitoring
+      - frontend
+    deploy:
+      <<: *deploy-manager
+
+# ── Swarm configs (mounted as files into containers) ──────────────────────────
+
+configs:
+  kong_config:
+    file: ./kong/kong.yml
+  prometheus_config:
+    file: ./monitoring/prometheus.yml
+
+# ── Swarm secrets ─────────────────────────────────────────────────────────────
+
+secrets:
+  db_password:
+    external: true
+  jwt_secret:
+    external: true
+
+networks:
+  frontend:
+    driver: overlay
+  backend:
+    driver: overlay
+    attachable: true
+  data:
+    driver: overlay
+  management:
+    driver: overlay
+  monitoring:
+    driver: overlay
+
+volumes:
+  mysql_data:
+  portainer_data:
+  prometheus_data:
+  grafana_data:

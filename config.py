@@ -13,7 +13,7 @@ IBD_TAG = 0
 FORECAST_TAG = 1
 
 IMAP_SERVER = os.getenv("IMAP_SERVER")
-IMAP_PORT = int(os.getenv("IMAP_PORT"))
+IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
 
 IMAP_ADDRESS = os.getenv("IMAP_ADDRESS")
 IMAP_PASSWORD = os.getenv("IMAP_PASSWORD")
