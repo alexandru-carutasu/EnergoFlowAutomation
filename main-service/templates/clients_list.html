@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Clienți – EnergoFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>👥 Clienți</h1>
+    <a href="{{ url_for('main.clients_add') }}" class="btn btn-primary">+ Adaugă Client</a>
+</div>
+
+{% if clients %}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Nume</th>
+                <th>Email</th>
+                <th>Nr. Parcuri</th>
+                <th>Producție</th>
+                <th>Acțiuni</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in clients %}
+            <tr>
+                <td>{{ c.id }}</td>
+                <td>{{ c.name }}</td>
+                <td>{{ c.email }}</td>
+                <td>{{ c.num_plants }}</td>
+                <td>
+                    {% if c.has_prod %}
+                        <span class="badge badge-green">DA</span>
+                    {% else %}
+                        <span class="badge badge-red">NU</span>
+                    {% endif %}
+                </td>
+                <td class="actions">
+                    <a href="{{ url_for('main.clients_edit', client_id=c.id) }}" class="btn btn-sm btn-ghost">✏️ Edit</a>
+                    <form method="POST" action="{{ url_for('main.clients_delete', client_id=c.id) }}" style="display:inline" onsubmit="return confirm('Ștergi clientul {{ c.name }}?')">
+                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="icon">👥</div>
+    <p>Niciun client înregistrat.</p>
+    <a href="{{ url_for('main.clients_add') }}" class="btn btn-primary">Adaugă primul client</a>
+</div>
+{% endif %}
+{% endblock %}

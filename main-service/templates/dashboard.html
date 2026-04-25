@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – EnergoFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📊 Dashboard</h1>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Clienți</div>
+        <div class="value accent">{{ stats.clients }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Parcuri</div>
+        <div class="value green">{{ stats.plants }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Măsurători</div>
+        <div class="value yellow">{{ stats.measurements }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Prețuri Dezechilibru</div>
+        <div class="value red">{{ stats.imbalance_prices }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Utilizatori</div>
+        <div class="value accent">{{ stats.users }}</div>
+    </div>
+</div>
+
+<div class="page-header">
+    <h1>Ultimii Clienți</h1>
+    <a href="{{ url_for('main.clients_add') }}" class="btn btn-primary">+ Adaugă Client</a>
+</div>
+
+{% if recent_clients %}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Nume</th>
+                <th>Email</th>
+                <th>Parcuri</th>
+                <th>Producție</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in recent_clients %}
+            <tr>
+                <td>{{ c.id }}</td>
+                <td><a href="{{ url_for('main.clients_edit', client_id=c.id) }}">{{ c.name }}</a></td>
+                <td>{{ c.email }}</td>
+                <td>{{ c.num_plants }}</td>
+                <td>
+                    {% if c.has_prod %}
+                        <span class="badge badge-green">DA</span>
+                    {% else %}
+                        <span class="badge badge-red">NU</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="icon">👥</div>
+    <p>Niciun client încă.</p>
+    <a href="{{ url_for('main.clients_add') }}" class="btn btn-primary">Adaugă primul client</a>
+</div>
+{% endif %}
+{% endblock %}
