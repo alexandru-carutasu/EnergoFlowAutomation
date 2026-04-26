@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 services:
 
   # ── Database ────────────────────────────────────────────────────────────────
@@ -63,80 +62,6 @@ services:
       DB_USER: ${DB_USER:-root}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME:-energoflow}
-=======
-version: "3.8"
-
-# ── Local development compose ─────────────────────────────────────────────────
-# Build context is the project root for services that share code.
-# Run:  docker compose up --build
-
-services:
-
-  # ── Own microservices ───────────────────────────────────────────────────────
-
-  db-service:
-    build:
-      context: .
-      dockerfile: microservices/db-service/Dockerfile
-    environment:
-      DB_HOST: mysql
-      DB_PORT: "3306"
-      DB_USER: root            # root needed so migrate.py can CREATE DATABASE
-      DB_PASSWORD: ${DB_PASSWORD:-changeme}
-      DB_NAME: ${DB_NAME:-energoflow}
-    ports:
-      - "5003:5003"            # exposed for direct testing
-    networks:
-      - backend
-      - data
-      - monitoring
-    depends_on:
-      mysql:
-        condition: service_healthy
-    restart: unless-stopped
-
-  auth-service:
-    build:
-      context: .
-      dockerfile: microservices/auth-service/Dockerfile
-    environment:
-      DB_SERVICE_URL: http://db-service:5003
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-    ports:
-      - "5001:5001"            # exposed for direct testing
-    networks:
-      - frontend
-      - backend
-      - monitoring
-    depends_on:
-      - db-service
-    restart: unless-stopped
-
-  api-service:
-    build:
-      context: .
-      dockerfile: microservices/api-service/Dockerfile
-    environment:
-      DB_SERVICE_URL: http://db-service:5003
-      AUTH_SERVICE_URL: http://auth-service:5001
-      SECRET_KEY: ${SECRET_KEY:-energoflow-dev-secret-key}
-    ports:
-      - "5000:5000"            # exposed for direct testing
-    networks:
-      - frontend
-      - backend
-      - monitoring
-    depends_on:
-      - db-service
-    restart: unless-stopped
-
-  scheduler-service:
-    build:
-      context: .
-      dockerfile: microservices/scheduler-service/Dockerfile
-    environment:
-      DB_SERVICE_URL: http://db-service:5003
->>>>>>> 56c67d3 (monolith-microservices transition)
       IMAP_SERVER: ${IMAP_SERVER}
       IMAP_PORT: ${IMAP_PORT:-993}
       IMAP_ADDRESS: ${IMAP_ADDRESS}
@@ -145,125 +70,29 @@ services:
       IBD_ADDRESS: ${IBD_ADDRESS}
       DROPBOX_APP_KEY: ${DROPBOX_APP_KEY}
       DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET}
-      DROPBOX_TOKEN_FILE: ${DROPBOX_TOKEN_FILE:-dropbox_token.json}
-      DROPBOX_EVAL_FILE_PATH: ${DROPBOX_EVAL_FILE_PATH:-.}
+      DROPBOX_TOKEN_FILE: /app/dropbox_token.json
+      DROPBOX_EVAL_FILE_PATH: /app/downloads
     ports:
-      - "5002:5002"            # exposed for health check testing
+      - "5000:5000"
     networks:
-      - backend
-      - monitoring
+      - frontend-net
+      - backend-net
+      - db-net
     depends_on:
-      - db-service
-    restart: unless-stopped
+      mysql:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
 
-  # ── Database ────────────────────────────────────────────────────────────────
-
-  mysql:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-changeme}
-      MYSQL_DATABASE: ${DB_NAME:-energoflow}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - data
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root",
-             "-p${DB_PASSWORD:-changeme}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-
-  # ── DB management utility ───────────────────────────────────────────────────
-
-  adminer:
-    image: adminer:latest
-    ports:
-      - "8080:8080"
-    networks:
-      - data
-      - frontend
-    depends_on:
-      - mysql
-    restart: unless-stopped
-
-  # ── API Gateway (Kong — DB-less mode) ───────────────────────────────────────
-
-  kong:
-    image: kong:3.6
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
-      KONG_PROXY_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_PROXY_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
-    volumes:
-      - ./kong/kong.yml:/usr/local/kong/declarative/kong.yml:ro
-    ports:
-      - "8000:8000"   # public proxy
-      - "8001:8001"   # admin API (dev only — remove in production)
-    networks:
-      - frontend
-    depends_on:
-      - api-service
-      - auth-service
-    restart: unless-stopped
-
-  # ── Cluster management ──────────────────────────────────────────────────────
-
-  portainer:
-    image: portainer/portainer-ce:latest
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    ports:
-      - "9000:9000"
-    networks:
-      - management
-    restart: unless-stopped
-
-  # ── Monitoring ──────────────────────────────────────────────────────────────
-
-  prometheus:
-    image: prom/prometheus:latest
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    ports:
-      - "9090:9090"
-    networks:
-      - monitoring
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:latest
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-    ports:
-      - "3000:3000"
-    networks:
-      - monitoring
-      - frontend
-    depends_on:
-      - prometheus
-    restart: unless-stopped
-
+# ── Networks ─────────────────────────────────────────────────────────────────
 networks:
-  frontend:
-  backend:
-  data:
-  management:
-  monitoring:
+  frontend-net:   # traffic that will be exposed via Kong
+    driver: bridge
+  backend-net:    # internal service-to-service communication
+    driver: bridge
+  db-net:         # database access only
+    driver: bridge
 
+# ── Volumes ──────────────────────────────────────────────────────────────────
 volumes:
-  mysql_data:
-  portainer_data:
-  prometheus_data:
-  grafana_data:
+  mysql-data:
