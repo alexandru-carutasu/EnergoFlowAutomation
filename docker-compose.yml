@@ -1,0 +1,98 @@
+services:
+
+  # ── Database ────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-energoflow}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - db-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── DB management utility ───────────────────────────────────────────────────
+  adminer:
+    image: adminer:4
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - db-net
+    depends_on:
+      - mysql
+
+  # ── Auth microservice ───────────────────────────────────────────────────────
+  auth-service:
+    build: ./auth-service
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-energoflow}
+      JWT_SECRET: ${JWT_SECRET}
+      ACCESS_TOKEN_EXPIRY_MINUTES: ${ACCESS_TOKEN_EXPIRY_MINUTES:-15}
+      REFRESH_TOKEN_EXPIRY_DAYS: ${REFRESH_TOKEN_EXPIRY_DAYS:-7}
+      AUTH_PORT: 5001
+    ports:
+      - "5001:5001"
+    networks:
+      - backend-net
+      - db-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # ── Main microservice (dashboard + scheduler) ───────────────────────────────
+  main-service:
+    build: ./main-service
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-energoflow}
+      IMAP_SERVER: ${IMAP_SERVER}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_ADDRESS: ${IMAP_ADDRESS}
+      IMAP_PASSWORD: ${IMAP_PASSWORD}
+      FORECAST_ADDRESS: ${FORECAST_ADDRESS}
+      IBD_ADDRESS: ${IBD_ADDRESS}
+      DROPBOX_APP_KEY: ${DROPBOX_APP_KEY}
+      DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET}
+      DROPBOX_TOKEN_FILE: /app/dropbox_token.json
+      DROPBOX_EVAL_FILE_PATH: /app/downloads
+    ports:
+      - "5000:5000"
+    networks:
+      - frontend-net
+      - backend-net
+      - db-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  frontend-net:   # traffic that will be exposed via Kong
+    driver: bridge
+  backend-net:    # internal service-to-service communication
+    driver: bridge
+  db-net:         # database access only
+    driver: bridge
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  mysql-data:
