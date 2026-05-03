@@ -80,8 +80,8 @@ class FileProcessator:
             f.write(payload)
 
         try:
-            # Store measurements in database
-            result = self._store_measurements_into_db(local_file_path, client_name)
+            # Store measurements in database with tag
+            result = self._store_measurements_into_db(local_file_path, client_name, tag)
             if result:
                 logging.error(f"Failed to store measurements: {result}")
         except Exception as e:
@@ -93,9 +93,9 @@ class FileProcessator:
                 pass
 
     def _store_measurements_into_db(
-        self, file_path: str, client_name: str
+        self, file_path: str, client_name: str, tag: str
     ) -> str:
-        """Store measurements from XLSX into database."""
+        """Store measurements from XLSX into database with tag support."""
         logging.info("Storing measurements...")
         try:
             workbook, header, forecast_idx = self._load_workbook_and_header(file_path)
@@ -104,7 +104,7 @@ class FileProcessator:
 
             for sheet_name in workbook.sheetnames:
                 error = self._process_sheet_rows(
-                    workbook, sheet_name, client_name, header, forecast_idx
+                    workbook, sheet_name, client_name, header, forecast_idx, tag
                 )
                 if error:
                     return error
@@ -151,6 +151,7 @@ class FileProcessator:
         client_name: str,
         header: dict,
         forecast_idx: int,
+        tag: str,
     ) -> str:
         """Process all rows in a sheet and store measurements."""
         try:
@@ -164,7 +165,7 @@ class FileProcessator:
                     continue
 
                 measurements, date = self._parse_row_and_add_measurements(
-                    row, header, forecast_idx
+                    row, header, forecast_idx, tag
                 )
                 if measurements:
                     measurements_batch.extend(measurements)
@@ -186,9 +187,9 @@ class FileProcessator:
             return "SHEET_ERROR"
 
     def _parse_row_and_add_measurements(
-        self, row: Tuple, header: dict, forecast_idx: int
+        self, row: Tuple, header: dict, forecast_idx: int, tag: str
     ) -> Tuple[list, Optional[Any]]:
-        """Parse a single row and create measurement entries."""
+        """Parse a single row and create measurement entries with tag-based column selection."""
         try:
             date = row[header.get("ZIUA", 0)]
             hour_interval = row[header.get("INTERVAL", 1)]
@@ -201,11 +202,23 @@ class FileProcessator:
             measurements = []
 
             for interval_start in intervals:
-                measurement = {
-                    "date": date,
-                    "interval": interval_start,
-                    "value": data_value,
-                }
+                # Unified storage: use tag to determine which column to populate
+                if tag == FORECAST_TAG:
+                    measurement = {
+                        "date": date,
+                        "interval": interval_start,
+                        "forecast_val": data_value,
+                    }
+                elif tag == IBD_TAG:
+                    measurement = {
+                        "date": date,
+                        "interval": interval_start,
+                        "prod_val": data_value,
+                    }
+                else:
+                    logging.warning(f"Unknown tag: {tag}. Skipping.")
+                    continue
+
                 measurements.append(measurement)
 
             return measurements, date
