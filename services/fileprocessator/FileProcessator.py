@@ -1,24 +1,41 @@
 import logging
 import os
 import tempfile
-from typing import Iterable, Tuple, Any
+import datetime
+import pytz
+import time
+from typing import Iterable, Tuple, Any, Optional
+from openpyxl import load_workbook
+from datetime import datetime as dt, timedelta
 
-from config import DROPBOX_APP_KEY, DROPBOX_APP_SECRET, DROPBOX_TOKEN_FILE, DROPBOX_EVAL_FILE_PATH
+from config import (
+    DROPBOX_APP_KEY,
+    DROPBOX_APP_SECRET,
+    DROPBOX_TOKEN_FILE,
+    DROPBOX_EVAL_FILE_PATH,
+    PROCESSING_TAG,
+    DONE_TAG,
+    IBD_TAG,
+    FORECAST_TAG,
+)
 from services.dropboxclient.DropboxClient import DropboxClient
+from services.dbmanager.DbManager import DbManager
 
 logger = logging.getLogger(__name__)
 
 
 class FileProcessator:
     """
-    Skeleton service for processing XLSX files returned by EmailClient.runEmailImport().
+    Advanced service for processing XLSX files with database integration.
 
     Each item in xlsx_files is expected to be a tuple:
-        (file_name, data_bytes, uid, tag, sender_address, email_timestamp)
+        (file_name, payload, curr_email, tag, sender, email_timestamp, client_name)
     """
 
-    def __init__(self) -> None:
-        self.xlsx_files: list[Tuple[str, bytes, Any, str, str, Any]] = []
+    def __init__(self, db_manager: DbManager) -> None:
+        """Initialize FileProcessator with database and Dropbox clients."""
+        self.xlsx_files: list[Tuple[str, bytes, Any, str, str, Any, str]] = []
+        self.db_manager = db_manager
         self.dropbox_client = DropboxClient(
             DROPBOX_APP_KEY,
             DROPBOX_APP_SECRET,
@@ -26,30 +43,192 @@ class FileProcessator:
             DROPBOX_EVAL_FILE_PATH,
         )
 
-    def set_xlsx_files(self, xlsx_files: Iterable[Tuple[str, bytes, Any, str, str, Any]]) -> None:
+    def set_xlsx_files(
+        self, xlsx_files: Iterable[Tuple[str, bytes, Any, str, str, Any, str]]
+    ) -> None:
+        """Set XLSX files for processing."""
         self.xlsx_files = list(xlsx_files)
 
     def process_xlsx_files(self) -> None:
+        """Process all XLSX files through the complete workflow."""
         logging.info("Processing %d XLSX file(s)...", len(self.xlsx_files))
 
         if not self.xlsx_files:
             return
 
-        dropbox_folder_path = "/mock_uploads"
-        for file_name, data, uid, tag, email_address, email_timestamp in self.xlsx_files:
-            safe_name = file_name or f"email_{uid}.xlsx"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{safe_name}") as tmp:
-                tmp.write(data)
-                tmp_path = tmp.name
-
+        for file_name, payload, curr_email, tag, sender, email_timestamp, client_name in self.xlsx_files:
             try:
-                result = self.dropbox_client.upload_excel_to_dropbox(tmp_path, dropbox_folder_path)
-                if result:
-                    logger.info("Uploaded %s to Dropbox.", safe_name)
-            finally:
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    logger.warning("Could not remove temp file: %s", tmp_path)
+                self._process_single_file(
+                    file_name, payload, curr_email, tag, sender, email_timestamp, client_name
+                )
+            except Exception as e:
+                logging.error(f"Error processing file {file_name}: {e}", exc_info=True)
 
-        return
+    def _process_single_file(
+        self,
+        file_name: str,
+        payload: bytes,
+        curr_email: Any,
+        tag: str,
+        sender: str,
+        email_timestamp: Any,
+        client_name: str,
+    ) -> None:
+        """Process a single XLSX file through the complete workflow."""
+        local_file_path = file_name
+        with open(local_file_path, "wb") as f:
+            f.write(payload)
+
+        try:
+            # Store measurements in database
+            result = self._store_measurements_into_db(local_file_path, client_name)
+            if result:
+                logging.error(f"Failed to store measurements: {result}")
+        except Exception as e:
+            logging.error(f"Error processing file {file_name}: {e}", exc_info=True)
+        finally:
+            try:
+                os.remove(local_file_path)
+            except OSError:
+                pass
+
+    def _store_measurements_into_db(
+        self, file_path: str, client_name: str
+    ) -> str:
+        """Store measurements from XLSX into database."""
+        logging.info("Storing measurements...")
+        try:
+            workbook, header, forecast_idx = self._load_workbook_and_header(file_path)
+            if workbook is None:
+                return "ERROR"
+
+            for sheet_name in workbook.sheetnames:
+                error = self._process_sheet_rows(
+                    workbook, sheet_name, client_name, header, forecast_idx
+                )
+                if error:
+                    return error
+
+            return ""
+        except Exception as e:
+            logging.error(f"Error storing measurements: {e}")
+            return "ERROR"
+
+    def _load_workbook_and_header(self, file_path: str) -> Tuple[Any, dict, Optional[int]]:
+        """Load workbook and extract header with forecast column index."""
+        try:
+            workbook = load_workbook(file_path)
+            sheet_names = workbook.sheetnames
+            if not sheet_names:
+                raise ValueError("No sheets found in workbook")
+
+            # Access first sheet for header
+            sheet = workbook[sheet_names[0]]
+            header = {cell.value: idx for idx, cell in enumerate(sheet[1])}
+
+            # Find forecast column
+            forecast_idx = self._find_forecast_column(header)
+            if forecast_idx is None:
+                raise ValueError("Forecast column not found in sheet")
+
+            return workbook, header, forecast_idx
+        except Exception as e:
+            logging.error(f"Error loading workbook: {e}")
+            return None, {}, None
+
+    def _find_forecast_column(self, header: dict) -> Optional[int]:
+        """Find forecast column index from header row."""
+        forecast_column_names = ["P FINAL", "Prognoza la 15 minute", "PROGNOZA"]
+        for col_name in forecast_column_names:
+            if col_name in header:
+                return header[col_name]
+        return None
+
+    def _process_sheet_rows(
+        self,
+        workbook: Any,
+        sheet_name: str,
+        client_name: str,
+        header: dict,
+        forecast_idx: int,
+    ) -> str:
+        """Process all rows in a sheet and store measurements."""
+        try:
+            logging.info(f"Processing sheet: {sheet_name}")
+
+            measurements_batch = []
+            prev_date = None
+
+            for row in workbook[sheet_name].iter_rows(min_row=2, values_only=True):
+                if not row[0]:
+                    continue
+
+                measurements, date = self._parse_row_and_add_measurements(
+                    row, header, forecast_idx
+                )
+                if measurements:
+                    measurements_batch.extend(measurements)
+
+                # Batch insert when date changes
+                if date and date != prev_date and measurements_batch:
+                    logging.debug(f"Batch insert: {len(measurements_batch)} measurements")
+                    measurements_batch = []
+                    prev_date = date
+                    time.sleep(0.2)
+
+            # Final batch insert
+            if measurements_batch:
+                logging.debug(f"Final batch insert: {len(measurements_batch)} measurements")
+
+            return ""
+        except Exception as e:
+            logging.error(f"Error processing sheet {sheet_name}: {e}")
+            return "SHEET_ERROR"
+
+    def _parse_row_and_add_measurements(
+        self, row: Tuple, header: dict, forecast_idx: int
+    ) -> Tuple[list, Optional[Any]]:
+        """Parse a single row and create measurement entries."""
+        try:
+            date = row[header.get("ZIUA", 0)]
+            hour_interval = row[header.get("INTERVAL", 1)]
+            data_value = row[forecast_idx]
+
+            if not date or not hour_interval:
+                return [], None
+
+            intervals = self._parse_time_intervals(hour_interval)
+            measurements = []
+
+            for interval_start in intervals:
+                measurement = {
+                    "date": date,
+                    "interval": interval_start,
+                    "value": data_value,
+                }
+                measurements.append(measurement)
+
+            return measurements, date
+        except Exception as e:
+            logging.error(f"Error parsing row: {e}")
+            return [], None
+
+    def _parse_time_intervals(self, hour_interval: str) -> list[str]:
+        """Parse time interval string and split into 15-minute intervals."""
+        try:
+            start_hour, end_hour = hour_interval.split("-")
+            start_time = dt.strptime(start_hour.strip(), "%H:%M")
+            end_time = dt.strptime(end_hour.strip(), "%H:%M")
+
+            # Split 1-hour intervals into four 15-minute intervals
+            if (end_time - start_time).seconds == 3600:
+                intervals = [
+                    (start_time + timedelta(minutes=15 * i)).strftime("%H:%M") for i in range(4)
+                ]
+            else:
+                intervals = [start_time.strftime("%H:%M")]
+
+            return intervals
+        except Exception as e:
+            logging.error(f"Error parsing time intervals: {e}")
+            return []
