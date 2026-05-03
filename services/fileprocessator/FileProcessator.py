@@ -4,6 +4,7 @@ import tempfile
 import datetime
 import pytz
 import time
+import imaplib
 from typing import Iterable, Tuple, Any, Optional
 from openpyxl import load_workbook
 from datetime import datetime as dt, timedelta
@@ -17,9 +18,13 @@ from config import (
     DONE_TAG,
     IBD_TAG,
     FORECAST_TAG,
+    IMAP_SERVER,
+    IMAP_USER,
+    IMAP_PASSWORD,
 )
 from services.dropboxclient.DropboxClient import DropboxClient
 from services.dbmanager.DbManager import DbManager
+from services.fileprocessator.EvalFileManager import EvalFileManager
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +47,7 @@ class FileProcessator:
             DROPBOX_TOKEN_FILE,
             DROPBOX_EVAL_FILE_PATH,
         )
+        self.eval_file_manager = EvalFileManager(db_manager, self.dropbox_client)
 
     def set_xlsx_files(
         self, xlsx_files: Iterable[Tuple[str, bytes, Any, str, str, Any, str]]
@@ -245,3 +251,56 @@ class FileProcessator:
         except Exception as e:
             logging.error(f"Error parsing time intervals: {e}")
             return []
+
+    def _create_evaluation_file(self, client_id: int, client_name: str, date_str: str) -> None:
+        """Create evaluation file via EvalFileManager."""
+        try:
+            self.eval_file_manager.create_evaluation_file(client_id, client_name, date_str)
+            logging.info(f"Created evaluation file for {client_name} on {date_str}")
+        except Exception as e:
+            logging.error(f"Error creating evaluation file: {e}")
+
+    def _update_evaluation_files(self, client_name: str, client_id: int, curr_date: Any) -> None:
+        """Update evaluation files via EvalFileManager."""
+        try:
+            self.eval_file_manager.update_evaluation_files(client_name, client_id, curr_date)
+            logging.info(f"Updated evaluation files for {client_name}")
+        except Exception as e:
+            logging.error(f"Error updating evaluation files: {e}")
+
+    def _update_evaluation_file(self, client_name: str, client_id: int, curr_date: Any) -> None:
+        """Update single evaluation file via EvalFileManager."""
+        try:
+            self.eval_file_manager.update_evaluation_files_1plant(client_name, client_id, curr_date)
+            logging.info(f"Updated evaluation file for {client_name}")
+        except Exception as e:
+            logging.error(f"Error updating evaluation file: {e}")
+
+    def _update_evaluation_files_1plant(self, client_name: str, client_id: int, curr_date: Any) -> None:
+        """Update evaluation files for single plant via EvalFileManager."""
+        try:
+            self.eval_file_manager.update_evaluation_files_1plant(client_name, client_id, curr_date)
+            logging.info(f"Updated plant evaluation for {client_name}")
+        except Exception as e:
+            logging.error(f"Error updating plant evaluation: {e}")
+
+    def _del_email(self, uid: int) -> None:
+        """Delete email by UID using IMAP."""
+        try:
+            # Convert UID to bytes if needed
+            uid_str = str(uid).encode() if isinstance(uid, int) else uid
+
+            # Connect to IMAP server
+            mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+            mail.login(IMAP_USER, IMAP_PASSWORD)
+            mail.select("INBOX")
+
+            # Mark email as deleted
+            mail.store(uid_str, "+FLAGS", "\\Deleted")
+            mail.expunge()
+            mail.close()
+            mail.logout()
+
+            logging.info(f"Deleted email with UID {uid}")
+        except Exception as e:
+            logging.error(f"Error deleting email {uid}: {e}")
