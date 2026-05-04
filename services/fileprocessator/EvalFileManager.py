@@ -172,24 +172,6 @@ class EvalFileManager:
     def update_evaluation_files_1plant(
         self, client_name: str, client_id: int, plant_name: str, curr_date: dt
     ) -> bool:
-        """Update evaluation file for single plant.
-
-        Parameters
-        ----------
-        client_name : str
-            Client name
-        client_id : int
-            Client ID
-        plant_name : str
-            Plant name
-        curr_date : datetime
-            Current date
-
-        Returns
-        -------
-        bool
-            True if successful
-        """
         logging.info(
             f"Updating evaluation file for {client_name} - plant {plant_name}"
         )
