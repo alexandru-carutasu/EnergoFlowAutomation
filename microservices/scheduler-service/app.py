@@ -56,13 +56,14 @@ class _HttpDbAdapter:
 
     # -- Imbalance prices --
 
-    def upsert_imbalance_price(self, date, interval,
+    def upsert_imbalance_price(self, date_=None, date=None, interval=0,
                                positive_imbalance=None, negative_imbalance=None):
+        actual_date = date_ or date
         try:
             requests.post(
                 f"{DB_URL}/imbalance-prices/upsert",
                 json={
-                    "date": str(date),
+                    "date": str(actual_date),
                     "interval": interval,
                     "positive_imbalance": positive_imbalance,
                     "negative_imbalance": negative_imbalance,
@@ -110,15 +111,16 @@ class _HttpDbAdapter:
             logging.error("Failed to get measurements for plant %s: %s", plant_id, e)
             return []
 
-    def upsert_measurement(self, plant_id: int, date, interval: int,
+    def upsert_measurement(self, plant_id: int, date_=None, date=None, interval: int = 0,
                            forecast_val=None, prod_val=None):
         """Upsert a measurement via db-service."""
+        actual_date = date_ or date
         try:
             resp = requests.post(
                 f"{DB_URL}/measurements/upsert",
                 json={
                     "plant_id": plant_id,
-                    "date": str(date),
+                    "date": str(actual_date),
                     "interval": interval,
                     "forecast_val": forecast_val,
                     "prod_val": prod_val,
@@ -230,7 +232,7 @@ def health():
 if __name__ == "__main__":
     scheduler = BackgroundScheduler()
     scheduler.add_job(run_imbalance_import, trigger="interval", minutes=15, max_instances=1)
-    scheduler.add_job(run_email_import, trigger="interval", minutes=10, max_instances=1)
+    scheduler.add_job(run_email_import, trigger="interval", minutes=1, max_instances=1)
     scheduler.start()
     logging.info("Scheduler started.")
     app.run(host="0.0.0.0", port=5002)
