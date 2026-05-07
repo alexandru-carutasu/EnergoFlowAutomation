@@ -10,6 +10,7 @@ COPY services/emailclient/ ./services/emailclient/
 COPY services/fileprocessator/ ./services/fileprocessator/
 COPY services/dropboxclient/ ./services/dropboxclient/
 COPY services/importclient/ ./services/importclient/
+COPY services/dbmanager/ ./services/dbmanager/
 COPY config.py .
 
 # Service entrypoint
