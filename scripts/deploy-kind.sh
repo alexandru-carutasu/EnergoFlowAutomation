@@ -96,10 +96,10 @@ wait_for_pods() {
     local start_time=$(date +%s)
 
     while true; do
-        local pending=$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | grep -v "Running\|Completed" | wc -l || echo "0")
+        local pending=$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | grep -v "Running\|Completed" | wc -l | tr -d ' ')
 
         if [ "$pending" -eq 0 ]; then
-            local running=$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | grep "Running" | wc -l || echo "0")
+            local running=$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null | grep "Running" | wc -l | tr -d ' ')
             if [ "$running" -gt 0 ]; then
                 break
             fi
