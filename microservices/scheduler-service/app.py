@@ -35,6 +35,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %I:%M:%S %p",
 )
 
+# Suppress noisy health/metrics endpoint logs
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
 DB_URL = os.getenv("DB_SERVICE_URL", "http://db-service:5003")
 
 app = Flask(__name__)
