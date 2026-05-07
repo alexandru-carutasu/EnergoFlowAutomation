@@ -85,6 +85,19 @@ apply_manifests() {
 
     log_info "Manifests applied"
 
+    # Create email-secrets if it doesn't exist (won't overwrite existing)
+    if ! kubectl get secret email-secrets -n "$NAMESPACE" &>/dev/null; then
+        log_warn "email-secrets not found. Create it with:"
+        echo "  kubectl create secret generic email-secrets -n $NAMESPACE \\"
+        echo "    --from-literal=IMAP_SERVER=<server> \\"
+        echo "    --from-literal=IMAP_ADDRESS=<email> \\"
+        echo "    --from-literal=IMAP_PASSWORD=<password> \\"
+        echo "    --from-literal=FORECAST_ADDRESS=<forecast-email> \\"
+        echo "    --from-literal=IBD_ADDRESS=<ibd-email>"
+    else
+        log_info "email-secrets already exists (not overwriting)"
+    fi
+
     log_step "Restarting deployments to pick up new images..."
     kubectl rollout restart deployment -n "$NAMESPACE"
 }
