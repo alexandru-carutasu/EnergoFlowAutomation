@@ -203,7 +203,10 @@ class FileProcessator:
     def _parse_row_and_add_measurements(
         self, row: Tuple, header: dict, forecast_idx: int, tag: str
     ) -> Tuple[list, Optional[Any]]:
-        """Parse a single row and create measurement entries with tag-based column selection."""
+        """Parse a single row and create measurement entries with tag-based column selection.
+
+        Converts local time (Europe/Bucharest) to UTC before storing.
+        """
         try:
             date = row[header.get("ZIUA", 0)]
             hour_interval = row[header.get("INTERVAL", 1)]
@@ -215,18 +218,24 @@ class FileProcessator:
             intervals = self._parse_time_intervals(hour_interval)
             measurements = []
 
+            # Timezone for conversion
+            local_tz = pytz.timezone("Europe/Bucharest")
+
             for interval_start in intervals:
+                # Convert local datetime to UTC
+                date_utc, interval_utc = self._convert_to_utc(date, interval_start, local_tz)
+
                 # Unified storage: use tag to determine which column to populate
                 if tag == FORECAST_TAG:
                     measurement = {
-                        "date": date,
-                        "interval": interval_start,
+                        "date": date_utc,
+                        "interval": interval_utc,
                         "forecast_val": data_value,
                     }
                 elif tag == IBD_TAG:
                     measurement = {
-                        "date": date,
-                        "interval": interval_start,
+                        "date": date_utc,
+                        "interval": interval_utc,
                         "prod_val": data_value,
                     }
                 else:
@@ -239,6 +248,42 @@ class FileProcessator:
         except Exception as e:
             logging.error(f"Error parsing row: {e}")
             return [], None
+
+    def _convert_to_utc(self, date_val: Any, interval: str, local_tz) -> Tuple[Any, str]:
+        """Convert local date and interval to UTC.
+
+        Args:
+            date_val: Date from Excel (can be datetime.date or datetime.datetime)
+            interval: Time interval string like "08:00"
+            local_tz: pytz timezone object
+
+        Returns:
+            Tuple of (utc_date, utc_interval_string)
+        """
+        # Handle both date and datetime from Excel
+        if isinstance(date_val, dt):
+            base_date = date_val.date()
+        elif isinstance(date_val, datetime.date):
+            base_date = date_val
+        else:
+            # Try parsing as string
+            base_date = dt.strptime(str(date_val), "%Y-%m-%d").date()
+
+        # Parse interval time
+        interval_time = dt.strptime(interval, "%H:%M").time()
+
+        # Combine date and time into naive datetime
+        local_naive = dt.combine(base_date, interval_time)
+
+        # Localize to local timezone and convert to UTC
+        local_dt = local_tz.localize(local_naive)
+        utc_dt = local_dt.astimezone(pytz.utc)
+
+        # Extract UTC date and interval
+        utc_date = utc_dt.date()
+        utc_interval = utc_dt.strftime("%H:%M")
+
+        return utc_date, utc_interval
 
     def _parse_time_intervals(self, hour_interval: str) -> list[str]:
         """Parse time interval string and split into 15-minute intervals."""
