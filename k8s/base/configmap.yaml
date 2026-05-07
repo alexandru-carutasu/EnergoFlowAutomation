@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: energoflow-config
+  namespace: energoflow
+data:
+  DB_HOST: "mysql"
+  DB_PORT: "3306"
+  DB_NAME: "energoflow"
+  DB_USER: "energoflow"
+  IMAP_PORT: "993"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: energoflow
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    _transform: true
+
+    services:
+      - name: auth-service
+        url: http://auth-service:5001
+        connect_timeout: 5000
+        read_timeout: 10000
+        routes:
+          - name: auth-api
+            paths:
+              - /auth
+            strip_path: false
+            methods:
+              - POST
+              - GET
+
+      - name: api-service
+        url: http://api-service:5000
+        connect_timeout: 5000
+        read_timeout: 30000
+        routes:
+          - name: web-dashboard
+            paths:
+              - /
+            strip_path: false
+
+      - name: adminer
+        url: http://adminer:8080
+        routes:
+          - name: adminer-ui
+            paths:
+              - /adminer
+            strip_path: true
+
+    plugins:
+      - name: rate-limiting
+        service: auth-service
+        config:
+          minute: 30
+          policy: local
+
+      - name: cors
+        service: api-service
+        config:
+          origins:
+            - "*"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+          headers:
+            - Accept
+            - Authorization
+            - Content-Type
+          max_age: 3600
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: energoflow
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ["localhost:9090"]
+
+      - job_name: api-service
+        static_configs:
+          - targets: ["api-service:5000"]
+        metrics_path: /metrics
+
+      - job_name: auth-service
+        static_configs:
+          - targets: ["auth-service:5001"]
+        metrics_path: /metrics
+
+      - job_name: db-service
+        static_configs:
+          - targets: ["db-service:5003"]
+        metrics_path: /metrics
+
+      - job_name: scheduler-service
+        static_configs:
+          - targets: ["scheduler-service:5002"]
+        metrics_path: /metrics

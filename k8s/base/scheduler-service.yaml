@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler-service
+  namespace: energoflow
+  labels:
+    app: scheduler-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler-service
+  template:
+    metadata:
+      labels:
+        app: scheduler-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5002"
+    spec:
+      containers:
+        - name: scheduler-service
+          image: energoflow/scheduler-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5002
+          env:
+            - name: DB_SERVICE_URL
+              value: "http://db-service:5003"
+            - name: IMAP_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: email-secrets
+                  key: IMAP_SERVER
+            - name: IMAP_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: energoflow-config
+                  key: IMAP_PORT
+            - name: IMAP_ADDRESS
+              valueFrom:
+                secretKeyRef:
+                  name: email-secrets
+                  key: IMAP_ADDRESS
+            - name: IMAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: email-secrets
+                  key: IMAP_PASSWORD
+            - name: FORECAST_ADDRESS
+              valueFrom:
+                secretKeyRef:
+                  name: email-secrets
+                  key: FORECAST_ADDRESS
+            - name: IBD_ADDRESS
+              valueFrom:
+                secretKeyRef:
+                  name: email-secrets
+                  key: IBD_ADDRESS
+            - name: DROPBOX_APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dropbox-secrets
+                  key: DROPBOX_APP_KEY
+            - name: DROPBOX_APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dropbox-secrets
+                  key: DROPBOX_APP_SECRET
+            - name: DROPBOX_TOKEN_FILE
+              value: "/app/dropbox_token.json"
+            - name: DROPBOX_EVAL_FILE_PATH
+              value: "/app/downloads"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduler-service
+  namespace: energoflow
+spec:
+  selector:
+    app: scheduler-service
+  ports:
+    - port: 5002
+      targetPort: 5002

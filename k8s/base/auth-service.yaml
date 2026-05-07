@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: energoflow
+  labels:
+    app: auth-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5001"
+    spec:
+      containers:
+        - name: auth-service
+          image: energoflow/auth-service:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5001
+          env:
+            - name: DB_SERVICE_URL
+              value: "http://db-service:5003"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: energoflow-secrets
+                  key: JWT_SECRET
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: energoflow
+spec:
+  selector:
+    app: auth-service
+  ports:
+    - port: 5001
+      targetPort: 5001

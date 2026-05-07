@@ -6,6 +6,8 @@ Port: 5002
 import logging
 import os
 import sys
+from datetime import datetime
+from typing import Any, List, Optional
 
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -39,13 +41,20 @@ app = Flask(__name__)
 metrics = PrometheusMetrics(app)
 
 emailClient = EmailClient(IMAP_SERVER, IMAP_PORT, IMAP_ADDRESS, IMAP_PASSWORD)
-fileProcessator = FileProcessator()
 
 
-# ── DB adapter (lets ImportClient call db-service via HTTP) ───────────────────
+# ── HTTP-based DbManager adapter ──────────────────────────────────────────────
 
 class _HttpDbAdapter:
-    """Thin adapter that gives ImportClient a db-compatible upsert interface."""
+    """
+    Adapter that provides DbManager-like interface via HTTP calls to db-service.
+    Used by FileProcessator and ImportClient.
+    """
+
+    def _parse_date(self, date_str: str):
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    # -- Imbalance prices --
 
     def upsert_imbalance_price(self, date, interval,
                                positive_imbalance=None, negative_imbalance=None):
@@ -63,13 +72,112 @@ class _HttpDbAdapter:
         except requests.RequestException as e:
             logging.error("Failed to upsert imbalance price: %s", e)
 
+    def get_all_imbalance_prices(self) -> List[Any]:
+        """Get all imbalance prices from db-service."""
+        try:
+            resp = requests.get(f"{DB_URL}/imbalance-prices", timeout=10)
+            resp.raise_for_status()
+            return [_DictToObj(p) for p in resp.json()]
+        except requests.RequestException as e:
+            logging.error("Failed to get imbalance prices: %s", e)
+            return []
+
+    # -- Plants --
+
+    def get_plants_by_client(self, client_id: int) -> List[Any]:
+        """Get plants for a client from db-service."""
+        try:
+            resp = requests.get(f"{DB_URL}/plants/by-client/{client_id}", timeout=10)
+            resp.raise_for_status()
+            return [_DictToObj(p) for p in resp.json()]
+        except requests.RequestException as e:
+            logging.error("Failed to get plants for client %s: %s", client_id, e)
+            return []
+
+    # -- Measurements --
+
+    def get_measurements_by_plant_and_date_eager(self, plant_id: int, date) -> List[Any]:
+        """Get measurements for a plant and date from db-service."""
+        try:
+            resp = requests.get(
+                f"{DB_URL}/measurements/by-plant-date",
+                params={"plant_id": plant_id, "date": str(date)},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return [_DictToObj(m) for m in resp.json()]
+        except requests.RequestException as e:
+            logging.error("Failed to get measurements for plant %s: %s", plant_id, e)
+            return []
+
+    def upsert_measurement(self, plant_id: int, date, interval: int,
+                           forecast_val=None, prod_val=None):
+        """Upsert a measurement via db-service."""
+        try:
+            resp = requests.post(
+                f"{DB_URL}/measurements/upsert",
+                json={
+                    "plant_id": plant_id,
+                    "date": str(date),
+                    "interval": interval,
+                    "forecast_val": forecast_val,
+                    "prod_val": prod_val,
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return _DictToObj(resp.json())
+        except requests.RequestException as e:
+            logging.error("Failed to upsert measurement: %s", e)
+            return None
+
+    # -- Clients --
+
+    def get_client_by_email(self, email: str) -> Optional[Any]:
+        """Get client by email from db-service."""
+        try:
+            resp = requests.get(f"{DB_URL}/clients/by-email/{email}", timeout=10)
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return _DictToObj(resp.json())
+        except requests.RequestException as e:
+            logging.error("Failed to get client by email %s: %s", email, e)
+            return None
+
+    def add_client(self, name: str, email: str, num_plants: int = 0, has_prod: bool = False):
+        """Add a client via db-service."""
+        try:
+            resp = requests.post(
+                f"{DB_URL}/clients",
+                json={"name": name, "email": email, "num_plants": num_plants, "has_prod": has_prod},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return _DictToObj(resp.json())
+        except requests.RequestException as e:
+            logging.error("Failed to add client: %s", e)
+            return None
+
+
+class _DictToObj:
+    """Convert dict to object for attribute access (mimics ORM objects)."""
+    def __init__(self, d: dict):
+        for k, v in d.items():
+            setattr(self, k, v)
+
+
+# Initialize with HTTP adapter
+db_adapter = _HttpDbAdapter()
+fileProcessator = FileProcessator(db_adapter)
+
 
 # ── scheduled jobs ────────────────────────────────────────────────────────────
 
 def run_imbalance_import():
     logging.info("Running imbalance import…")
     try:
-        importer = ImportClient(_HttpDbAdapter())
+        importer = ImportClient(db_adapter)
         count = importer.import_latest_prices()
         logging.info("Imported %s imbalance price record(s).", count)
     except Exception as e:
