@@ -25,7 +25,6 @@ app.secret_key = "energoflow-dev-secret-key"
 logging.basicConfig(format='%(levelname)s: [%(asctime)s]:: %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %I:%M:%S %p')
 
 emailClient = EmailClient(IMAP_SERVER, IMAP_PORT, IMAP_ADDRESS, IMAP_PASSWORD)
-fileProcessator = FileProcessator()
 dropboxClient = DropboxClient(
     DROPBOX_APP_KEY,
     DROPBOX_APP_SECRET,
@@ -33,6 +32,7 @@ dropboxClient = DropboxClient(
     DROPBOX_EVAL_FILE_PATH,
 )
 db = None
+fileProcessator = None
 
 def runImbalanceImport():
     logging.info("Running imbalance import...")
@@ -45,7 +45,7 @@ def runImbalanceImport():
 
 def download_files(xlsx_files):
     try:
-        for (file_name, data, uid, tag, email_address, email_timestamp) in xlsx_files:
+        for (file_name, data, uid, tag, email_address, email_timestamp, _client_name) in xlsx_files:
             local_file_path = f"{file_name}"
 
             with open(local_file_path, "wb") as f:
@@ -72,6 +72,9 @@ def runEmailImport():
     if nr_files == -1:
         return
     
+    if fileProcessator is None:
+        logging.error("FileProcessator not initialized. Skipping processing.")
+        return
     fileProcessator.set_xlsx_files(xlsx_files)
     fileProcessator.process_xlsx_files()
     
@@ -80,6 +83,7 @@ def runEmailImport():
 if __name__ == '__main__':
     # Auto-migration: creates DB + all tables if they don't exist
     db = run_migration()
+    fileProcessator = FileProcessator(db)
     
     # Inject db into routes and register blueprint
     init_routes(db)
