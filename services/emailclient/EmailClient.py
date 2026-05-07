@@ -68,9 +68,9 @@ class EmailClient:
                         msg, sender, email_timestamp, email_address, subject = self.get_mail_data(response_part)
                         logging.info(f"Processing email from {sender} with subject '{subject}' received at {email_timestamp}")
                         if self.mail_is_forecast(subject, email_address):
-                            self.parse_forecast_mail(msg, uid, xlsx_files, email_timestamp)
+                            self.parse_forecast_mail(msg, uid, xlsx_files, email_timestamp, email_address)
                         elif self.mail_is_ibd(subject, email_address):
-                            self.parse_ibd_mail(msg, uid, xlsx_files, email_timestamp)
+                            self.parse_ibd_mail(msg, uid, xlsx_files, email_timestamp, email_address)
 
                             
                 # Mark the email as unread (use UID)
@@ -106,29 +106,29 @@ class EmailClient:
     def mail_is_forecast(self, subject, email_address):
         return (email_address == FORECAST_ADDRESS and subject.__contains__("Production forecast"))
 
-    def parse_forecast_mail(self, msg, uid, xlsx_files, email_timestamp):
+    def parse_forecast_mail(self, msg, uid, xlsx_files, email_timestamp, sender_address):
         for part in msg.walk():
             if part.get_content_maintype() == 'multipart':
                 continue
             if part.get('Content-Disposition') is None:
                 continue
             file_name = part.get_filename()
-            if file_name.endswith('.xlsx'):
+            if file_name and file_name.endswith('.xlsx'):
                 data = part.get_payload(decode=True)
                 logging.info(f"Found forecast email with attachment: {file_name}")
-                xlsx_files.append((file_name, data, uid, FORECAST_TAG, FORECAST_ADDRESS, email_timestamp))
+                xlsx_files.append((file_name, data, uid, FORECAST_TAG, sender_address, email_timestamp, ""))
 
     def mail_is_ibd(self, subject, email_address):
         return (email_address == IBD_ADDRESS and subject.__contains__("Actual Production Data"))
     
-    def parse_ibd_mail(self, msg, uid, xlsx_files, email_timestamp):
+    def parse_ibd_mail(self, msg, uid, xlsx_files, email_timestamp, sender_address):
         for part in msg.walk():
             if part.get_content_maintype() == 'multipart':
                 continue
             if part.get('Content-Disposition') is None:
                 continue
             file_name = part.get_filename()
-            if file_name.endswith('.xlsx'):
+            if file_name and file_name.endswith('.xlsx'):
                 data = part.get_payload(decode=True)
                 logging.info(f"Found IBD email with attachment: {file_name}")
-                xlsx_files.append((file_name, data, uid, IBD_TAG, IBD_ADDRESS, email_timestamp))
+                xlsx_files.append((file_name, data, uid, IBD_TAG, sender_address, email_timestamp, ""))
