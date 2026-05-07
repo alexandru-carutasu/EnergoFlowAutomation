@@ -3,7 +3,6 @@ import os
 import tempfile
 import datetime
 import pytz
-import time
 import imaplib
 from typing import Iterable, Tuple, Any, Optional
 from openpyxl import load_workbook
@@ -81,13 +80,23 @@ class FileProcessator:
         client_name: str,
     ) -> None:
         """Process a single XLSX file through the complete workflow."""
+        client_id = None
+        if not client_name and sender:
+            client = self.db_manager.get_client_by_email(sender)
+            if client:
+                client_name = client.name
+                client_id = client.id
+            else:
+                logging.warning(f"No client found for sender {sender}. Skipping file {file_name}.")
+                return
+
         local_file_path = file_name
         with open(local_file_path, "wb") as f:
             f.write(payload)
 
         try:
             # Store measurements in database with tag
-            result = self._store_measurements_into_db(local_file_path, client_name, tag)
+            result = self._store_measurements_into_db(local_file_path, client_id, tag)
             if result:
                 logging.error(f"Failed to store measurements: {result}")
         except Exception as e:
@@ -99,7 +108,7 @@ class FileProcessator:
                 pass
 
     def _store_measurements_into_db(
-        self, file_path: str, client_name: str, tag: str
+        self, file_path: str, client_id: Optional[int], tag: str
     ) -> str:
         """Store measurements from XLSX into database with tag support."""
         logging.info("Storing measurements...")
@@ -108,9 +117,16 @@ class FileProcessator:
             if workbook is None:
                 return "ERROR"
 
+            plants = self.db_manager.get_plants_by_client(client_id) if client_id else []
+            plant_map = {p.name: p.id for p in plants}
+
             for sheet_name in workbook.sheetnames:
+                plant_id = plant_map.get(sheet_name)
+                if plant_id is None:
+                    logging.warning(f"No plant found for sheet '{sheet_name}' (client_id={client_id}). Skipping sheet.")
+                    continue
                 error = self._process_sheet_rows(
-                    workbook, sheet_name, client_name, header, forecast_idx, tag
+                    workbook, sheet_name, plant_id, header, forecast_idx, tag
                 )
                 if error:
                     return error
@@ -154,7 +170,7 @@ class FileProcessator:
         self,
         workbook: Any,
         sheet_name: str,
-        client_name: str,
+        plant_id: int,
         header: dict,
         forecast_idx: int,
         tag: str,
@@ -163,29 +179,21 @@ class FileProcessator:
         try:
             logging.info(f"Processing sheet: {sheet_name}")
 
-            measurements_batch = []
-            prev_date = None
-
             for row in workbook[sheet_name].iter_rows(min_row=2, values_only=True):
                 if not row[0]:
                     continue
 
-                measurements, date = self._parse_row_and_add_measurements(
+                measurements, _ = self._parse_row_and_add_measurements(
                     row, header, forecast_idx, tag
                 )
-                if measurements:
-                    measurements_batch.extend(measurements)
-
-                # Batch insert when date changes
-                if date and date != prev_date and measurements_batch:
-                    logging.debug(f"Batch insert: {len(measurements_batch)} measurements")
-                    measurements_batch = []
-                    prev_date = date
-                    time.sleep(0.2)
-
-            # Final batch insert
-            if measurements_batch:
-                logging.debug(f"Final batch insert: {len(measurements_batch)} measurements")
+                for m in measurements:
+                    self.db_manager.upsert_measurement(
+                        plant_id=plant_id,
+                        date_=m["date"],
+                        interval=m["interval"],
+                        forecast_val=m.get("forecast_val"),
+                        prod_val=m.get("prod_val"),
+                    )
 
             return ""
         except Exception as e:
@@ -268,18 +276,18 @@ class FileProcessator:
         except Exception as e:
             logging.error(f"Error updating evaluation files: {e}")
 
-    def _update_evaluation_file(self, client_name: str, client_id: int, curr_date: Any) -> None:
+    def _update_evaluation_file(self, client_name: str, client_id: int, plant_name: str, curr_date: Any) -> None:
         """Update single evaluation file via EvalFileManager."""
         try:
-            self.eval_file_manager.update_evaluation_files_1plant(client_name, client_id, curr_date)
+            self.eval_file_manager.update_evaluation_files_1plant(client_name, client_id, plant_name, curr_date)
             logging.info(f"Updated evaluation file for {client_name}")
         except Exception as e:
             logging.error(f"Error updating evaluation file: {e}")
 
-    def _update_evaluation_files_1plant(self, client_name: str, client_id: int, curr_date: Any) -> None:
+    def _update_evaluation_files_1plant(self, client_name: str, client_id: int, plant_name: str, curr_date: Any) -> None:
         """Update evaluation files for single plant via EvalFileManager."""
         try:
-            self.eval_file_manager.update_evaluation_files_1plant(client_name, client_id, curr_date)
+            self.eval_file_manager.update_evaluation_files_1plant(client_name, client_id, plant_name, curr_date)
             logging.info(f"Updated plant evaluation for {client_name}")
         except Exception as e:
             logging.error(f"Error updating plant evaluation: {e}")
