@@ -26,44 +26,19 @@ class EvalFileManager:
 
     EVAL_FILE_PREFIX = "Evaluare_"
     EVAL_FILE_SUFFIX = ".xlsx"
-    EVAL_FOLDER_TEMPLATE = "/Forecast automat/{client_name}"
-    EVAL_FOLDER_OUT = "/Forecast automat/{client_name}/out"  # For forecast
-    EVAL_FOLDER_IN = "/Forecast automat/{client_name}/in"    # For production (IBD)
-    TEMPLATE_FOLDER = "/Forecast automat/Template"
-    TEMPLATE_FILE_NAME = "Evaluare_template.xlsx"
+    EVAL_FOLDER_TEMPLATE = "/Forecast Automat/{client_name}"
+    EVAL_FOLDER_OUT = "/Forecast Automat/{client_name}/out"  # For forecast
+    EVAL_FOLDER_IN = "/Forecast Automat/{client_name}/in"    # For production (IBD)
+    TEMPLATE_FOLDER = "/Forecast Automat"
+    TEMPLATE_FILE_NAME = "Evaluare.xlsx"
 
     def __init__(self, db_manager: DbManager, dropbox_client: DropboxClient) -> None:
-        """Initialize EvalFileManager.
-
-        Parameters
-        ----------
-        db_manager : DbManager
-            Database manager instance
-        dropbox_client : DropboxClient
-            Dropbox client for file operations
-        """
         self.db_manager = db_manager
         self.dropbox_client = dropbox_client
 
     def create_evaluation_file(
         self, client_id: int, client_name: str, date_str: str
     ) -> bool:
-        """Create evaluation file for client and month.
-
-        Parameters
-        ----------
-        client_id : int
-            Client ID
-        client_name : str
-            Client name
-        date_str : str
-            Date in MMYYYY format
-
-        Returns
-        -------
-        bool
-            True if successful
-        """
         logging.info(f"Creating evaluation file for {client_name} - {date_str}")
         try:
             # Get plant names from database
@@ -77,7 +52,7 @@ class EvalFileManager:
             # Download template from Dropbox
             template_path = self._download_template()
             if not template_path:
-                logging.error("Failed to download template from Dropbox")
+                logging.error(f"Failed to download template from Dropbox {template_path}.")
                 return False
 
             # Create evaluation file from template
@@ -139,13 +114,19 @@ class EvalFileManager:
         """
         logging.info(f"Updating evaluation files for {client_name} (tag: {tag})")
         try:
-            # Download existing evaluation file
+            # Download existing evaluation file or create new one
             formatted_date = curr_date.strftime("%m%Y")
             eval_file_path = self._download_eval_file(client_name, formatted_date)
 
             if not eval_file_path or not os.path.exists(eval_file_path):
-                logging.error(f"Failed to download evaluation file from Dropbox")
-                return False
+                logging.info(f"Evaluation file not found, creating new one for {client_name}")
+                if not self.create_evaluation_file(client_id, client_name, formatted_date):
+                    logging.error(f"Failed to create evaluation file for {client_name}")
+                    return False
+                eval_file_path = self._download_eval_file(client_name, formatted_date)
+                if not eval_file_path or not os.path.exists(eval_file_path):
+                    logging.error(f"Still failed to get evaluation file after creation")
+                    return False
 
             # Get all plants for client
             plants = self.db_manager.get_plants_by_client(client_id)
@@ -161,8 +142,9 @@ class EvalFileManager:
             else:
                 dropbox_folder = self.EVAL_FOLDER_TEMPLATE.format(client_name=client_name)
 
+            target_filename = f"{self.EVAL_FILE_PREFIX}{client_name}_{formatted_date}{self.EVAL_FILE_SUFFIX}"
             upload_result = self.dropbox_client.upload_excel_to_dropbox(
-                eval_file_path, dropbox_folder
+                eval_file_path, dropbox_folder, target_filename
             )
 
             if upload_result:

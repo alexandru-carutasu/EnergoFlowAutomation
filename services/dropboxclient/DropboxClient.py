@@ -90,7 +90,7 @@ class DropboxClient:
             logger.error("Failed to authenticate with Dropbox: %s", ex)
             return None
 
-    def upload_excel_to_dropbox(self, local_file_path: str, dropbox_folder_path: str) -> str:
+    def upload_excel_to_dropbox(self, local_file_path: str, dropbox_folder_path: str, target_filename: str = None) -> str:
         try:
             refresh_token = self.load_refresh_token()
             if not refresh_token:
@@ -103,7 +103,7 @@ class DropboxClient:
             if not os.path.exists(local_file_path):
                 raise Exception(f"Local file not found: {local_file_path}")
 
-            file_name = os.path.basename(local_file_path)
+            file_name = target_filename if target_filename else os.path.basename(local_file_path)
             dropbox_path = f"{dropbox_folder_path}/{file_name}".replace("//", "/")
 
             with open(local_file_path, "rb") as file:

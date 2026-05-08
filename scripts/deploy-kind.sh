@@ -98,6 +98,25 @@ apply_manifests() {
         log_info "email-secrets already exists (not overwriting)"
     fi
 
+    # Create dropbox-secrets if it doesn't exist (won't overwrite existing)
+    if ! kubectl get secret dropbox-secrets -n "$NAMESPACE" &>/dev/null; then
+        log_warn "dropbox-secrets not found. Create it with:"
+        echo "  kubectl create secret generic dropbox-secrets -n $NAMESPACE \\"
+        echo "    --from-literal=DROPBOX_APP_KEY=<app-key> \\"
+        echo "    --from-literal=DROPBOX_APP_SECRET=<app-secret>"
+    else
+        log_info "dropbox-secrets already exists (not overwriting)"
+    fi
+
+    # Create dropbox-token if it doesn't exist (won't overwrite existing)
+    if ! kubectl get secret dropbox-token -n "$NAMESPACE" &>/dev/null; then
+        log_warn "dropbox-token not found. Create it with:"
+        echo "  kubectl create secret generic dropbox-token -n $NAMESPACE \\"
+        echo "    --from-file=dropbox_token.json=<path-to-token-file>"
+    else
+        log_info "dropbox-token already exists (not overwriting)"
+    fi
+
     log_step "Restarting deployments to pick up new images..."
     kubectl rollout restart deployment -n "$NAMESPACE"
 }
