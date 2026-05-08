@@ -194,6 +194,19 @@ class DbManager:
             )
             return list(s.scalars(stmt).unique().all())
 
+    def get_measurements_by_plant_from_date(
+        self, plant_id: int, start_date: date
+    ) -> list[Measurement]:
+        """Get all measurements for a plant from start_date onwards."""
+        with self.session as s:
+            stmt = (
+                select(Measurement)
+                .options(joinedload(Measurement.plant))
+                .where(and_(Measurement.plant_id == plant_id, Measurement.date >= start_date))
+                .order_by(Measurement.date, Measurement.interval)
+            )
+            return list(s.scalars(stmt).unique().all())
+
     def get_all_measurements(self) -> list[Measurement]:
         return self._get_all(Measurement)
 

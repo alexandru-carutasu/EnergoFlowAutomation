@@ -114,6 +114,20 @@ class _HttpDbAdapter:
             logging.error("Failed to get measurements for plant %s: %s", plant_id, e)
             return []
 
+    def get_measurements_by_plant_from_date(self, plant_id: int, start_date) -> List[Any]:
+        """Get measurements for a plant from start_date onwards."""
+        try:
+            resp = requests.get(
+                f"{DB_URL}/measurements/by-plant-from-date",
+                params={"plant_id": plant_id, "start_date": str(start_date)},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return [_DictToObj(m) for m in resp.json()]
+        except requests.RequestException as e:
+            logging.error("Failed to get measurements for plant %s from %s: %s", plant_id, start_date, e)
+            return []
+
     def upsert_measurement(self, plant_id: int, date_=None, date=None, interval: int = 0,
                            forecast_val=None, prod_val=None):
         """Upsert a measurement via db-service."""

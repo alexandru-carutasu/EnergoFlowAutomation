@@ -172,6 +172,17 @@ def get_measurements_by_plant_date():
     return jsonify([_meas(m, with_plant=True) for m in measurements])
 
 
+@app.route("/measurements/by-plant-from-date", methods=["GET"])
+def get_measurements_by_plant_from_date():
+    plant_id = request.args.get("plant_id", type=int)
+    start_date_str = request.args.get("start_date")
+    if not plant_id or not start_date_str:
+        abort(400)
+    start_date = _parse_date(start_date_str)
+    measurements = db.get_measurements_by_plant_from_date(plant_id, start_date)
+    return jsonify([_meas(m, with_plant=True) for m in measurements])
+
+
 @app.route("/measurements", methods=["POST"])
 def add_measurement():
     d = request.get_json()

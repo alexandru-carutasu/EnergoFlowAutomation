@@ -134,13 +134,8 @@ class EvalFileManager:
             for plant in plants:
                 self._update_plant_sheet(eval_file_path, plant.id, plant.name, curr_date)
 
-            # Upload to folder based on tag: /out for forecast, /in for production
-            if tag == FORECAST_TAG:
-                dropbox_folder = self.EVAL_FOLDER_OUT.format(client_name=client_name)
-            elif tag == IBD_TAG:
-                dropbox_folder = self.EVAL_FOLDER_IN.format(client_name=client_name)
-            else:
-                dropbox_folder = self.EVAL_FOLDER_TEMPLATE.format(client_name=client_name)
+            # Evaluation file always goes to client root folder
+            dropbox_folder = self.EVAL_FOLDER_TEMPLATE.format(client_name=client_name)
 
             target_filename = f"{self.EVAL_FILE_PREFIX}{client_name}_{formatted_date}{self.EVAL_FILE_SUFFIX}"
             upload_result = self.dropbox_client.upload_excel_to_dropbox(
@@ -354,25 +349,33 @@ class EvalFileManager:
         """
         try:
             workbook = load_workbook(template_path)
+            logging.info(f"Template sheets: {workbook.sheetnames}")
 
-            # Remove default sheet if exists
-            if "Sheet" in workbook.sheetnames:
-                workbook.remove(workbook["Sheet"])
+            if len(workbook.sheetnames) < 2:
+                logging.error("Template must have at least 2 sheets (summary + 1 plant template)")
+                return None
 
-            # Copy template sheets for each plant
-            for plant_name in plant_names:
-                if "Template" in workbook.sheetnames:
-                    template_sheet = workbook["Template"]
-                    new_sheet = workbook.copy_worksheet(template_sheet)
-                    new_sheet.title = plant_name
+            num_plants = len(plant_names)
+            # Sheet 0 = Summary (keep), Sheets 1 to num_plants = plant sheets (rename), rest = delete
+            sheets_to_keep = 1 + num_plants  # summary + plant sheets
 
-            # Remove template sheet if still exists
-            if "Template" in workbook.sheetnames:
-                workbook.remove(workbook["Template"])
+            # Delete excess sheets from the end
+            while len(workbook.sheetnames) > sheets_to_keep:
+                sheet_to_remove = workbook.sheetnames[-1]
+                workbook.remove(workbook[sheet_to_remove])
+                logging.info(f"Removed excess sheet: {sheet_to_remove}")
+
+            # Rename plant sheets (sheets 1 to num_plants) to plant names from DB
+            for i, plant_name in enumerate(plant_names):
+                sheet_index = i + 1  # skip summary at index 0
+                if sheet_index < len(workbook.sheetnames):
+                    old_name = workbook.sheetnames[sheet_index]
+                    workbook[old_name].title = plant_name
+                    logging.info(f"Renamed sheet '{old_name}' to '{plant_name}'")
 
             # Save file
             workbook.save(output_file_name)
-            logging.info(f"Created evaluation file: {output_file_name}")
+            logging.info(f"Created evaluation file: {output_file_name} with sheets: {workbook.sheetnames}")
             return output_file_name
 
         except Exception as e:
@@ -403,13 +406,15 @@ class EvalFileManager:
         try:
             logging.info(f"Updating sheet for plant: {plant_name}")
 
-            # Get measurements for plant
+            # Get measurements for plant from start of month
             start_of_month = curr_date.replace(day=1)
             start_date = start_of_month.date()
 
-            measurements = self.db_manager.get_measurements_by_plant_and_date_eager(
+            measurements = self.db_manager.get_measurements_by_plant_from_date(
                 plant_id, start_date
             )
+
+            logging.info(f"Found {len(measurements)} measurements for plant {plant_name}")
 
             if not measurements:
                 logging.warning(
@@ -420,9 +425,14 @@ class EvalFileManager:
             # Create dataframe from measurements
             meas_data = []
             for m in measurements:
+                # Parse date string to date object if needed
+                m_date = m.date
+                if isinstance(m_date, str):
+                    m_date = dt.strptime(m_date, "%Y-%m-%d").date()
+
                 meas_data.append(
                     {
-                        "data": m.date,
+                        "data": m_date,
                         "timp": m.interval,
                         "productionmw": m.prod_val,
                         "forecastmw": m.forecast_val,
@@ -430,6 +440,7 @@ class EvalFileManager:
                 )
 
             dfMeas = pd.DataFrame(meas_data)
+            logging.info(f"Measurements dataframe shape: {dfMeas.shape}, dates: {dfMeas['data'].unique()[:5]}")
 
             # Get imbalance prices for all dates
             all_dates = dfMeas["data"].unique()
@@ -475,12 +486,17 @@ class EvalFileManager:
 
             price_data = []
             for price in prices:
+                # Parse date string to date object if needed
+                price_date = price.date
+                if isinstance(price_date, str):
+                    price_date = dt.strptime(price_date, "%Y-%m-%d").date()
+
                 price_data.append(
                     {
-                        "data": price.date,
+                        "data": price_date,
                         "timp": price.interval,
-                        "positive_price": price.positive_price,
-                        "negative_price": price.negative_price,
+                        "positive_price": price.positive_imbalance,
+                        "negative_price": price.negative_imbalance,
                     }
                 )
 
@@ -523,6 +539,13 @@ class EvalFileManager:
             sheet = workbook[sheet_name]
             start_row = 4  # Assuming data starts at row 4
 
+            # Log first few rows to debug
+            logging.info(f"Sheet {sheet_name} row 4 col 1: {sheet.cell(row=4, column=1).value}, col 2: {sheet.cell(row=4, column=2).value}")
+            logging.info(f"DataFrame columns: {df_all.columns.tolist()}, shape: {df_all.shape}")
+            if not df_all.empty:
+                logging.info(f"DataFrame first row: {df_all.iloc[0].to_dict()}")
+
+            rows_updated = 0
             while (
                 sheet.cell(row=start_row, column=1).value is not None
                 and str(sheet.cell(row=start_row, column=1).value).strip() != "TOTAL LUNA"
@@ -546,6 +569,7 @@ class EvalFileManager:
 
                 if not matching_rows.empty:
                     row_data = matching_rows.iloc[0]
+                    rows_updated += 1
 
                     # Write production
                     prod_val = row_data.get("productionmw")
@@ -578,6 +602,8 @@ class EvalFileManager:
                         sheet.cell(row=start_row, column=10, value=neg_price)
 
                 start_row += 1
+
+            logging.info(f"Updated {rows_updated} rows in sheet {sheet_name}")
 
             workbook.save(file_name)
             logging.info(f"Successfully updated sheet {sheet_name}")

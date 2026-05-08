@@ -74,6 +74,61 @@ load_images() {
     log_info "All images loaded into cluster"
 }
 
+create_secrets() {
+    log_step "Creating secrets from secrets.env..."
+
+    local secrets_file="${PROJECT_ROOT}/secrets.env"
+
+    if [ ! -f "$secrets_file" ]; then
+        log_warn "secrets.env not found. Copy secrets.env.example to secrets.env and fill in your values."
+        log_warn "Skipping secrets creation - pods may fail to start!"
+        return
+    fi
+
+    # Source the secrets file
+    set -a
+    source "$secrets_file"
+    set +a
+
+    # Create email-secrets
+    if ! kubectl get secret email-secrets -n "$NAMESPACE" &>/dev/null; then
+        log_info "Creating email-secrets..."
+        kubectl create secret generic email-secrets -n "$NAMESPACE" \
+            --from-literal=IMAP_SERVER="${IMAP_SERVER}" \
+            --from-literal=IMAP_ADDRESS="${IMAP_ADDRESS}" \
+            --from-literal=IMAP_PASSWORD="${IMAP_PASSWORD}" \
+            --from-literal=FORECAST_ADDRESS="${FORECAST_ADDRESS}" \
+            --from-literal=IBD_ADDRESS="${IBD_ADDRESS}"
+    else
+        log_info "email-secrets already exists (not overwriting)"
+    fi
+
+    # Create dropbox-secrets
+    if ! kubectl get secret dropbox-secrets -n "$NAMESPACE" &>/dev/null; then
+        log_info "Creating dropbox-secrets..."
+        kubectl create secret generic dropbox-secrets -n "$NAMESPACE" \
+            --from-literal=DROPBOX_APP_KEY="${DROPBOX_APP_KEY}" \
+            --from-literal=DROPBOX_APP_SECRET="${DROPBOX_APP_SECRET}"
+    else
+        log_info "dropbox-secrets already exists (not overwriting)"
+    fi
+
+    # Create dropbox-token from file
+    if ! kubectl get secret dropbox-token -n "$NAMESPACE" &>/dev/null; then
+        local token_file="${PROJECT_ROOT}/${DROPBOX_TOKEN_FILE:-dropbox_token.json}"
+        if [ -f "$token_file" ]; then
+            log_info "Creating dropbox-token from ${token_file}..."
+            kubectl create secret generic dropbox-token -n "$NAMESPACE" \
+                --from-file=dropbox_token.json="$token_file"
+        else
+            log_warn "Dropbox token file not found at ${token_file}"
+            log_warn "Create it manually or run Dropbox authorization"
+        fi
+    else
+        log_info "dropbox-token already exists (not overwriting)"
+    fi
+}
+
 apply_manifests() {
     log_step "Applying Kubernetes manifests..."
 
@@ -84,38 +139,6 @@ apply_manifests() {
     fi
 
     log_info "Manifests applied"
-
-    # Create email-secrets if it doesn't exist (won't overwrite existing)
-    if ! kubectl get secret email-secrets -n "$NAMESPACE" &>/dev/null; then
-        log_warn "email-secrets not found. Create it with:"
-        echo "  kubectl create secret generic email-secrets -n $NAMESPACE \\"
-        echo "    --from-literal=IMAP_SERVER=<server> \\"
-        echo "    --from-literal=IMAP_ADDRESS=<email> \\"
-        echo "    --from-literal=IMAP_PASSWORD=<password> \\"
-        echo "    --from-literal=FORECAST_ADDRESS=<forecast-email> \\"
-        echo "    --from-literal=IBD_ADDRESS=<ibd-email>"
-    else
-        log_info "email-secrets already exists (not overwriting)"
-    fi
-
-    # Create dropbox-secrets if it doesn't exist (won't overwrite existing)
-    if ! kubectl get secret dropbox-secrets -n "$NAMESPACE" &>/dev/null; then
-        log_warn "dropbox-secrets not found. Create it with:"
-        echo "  kubectl create secret generic dropbox-secrets -n $NAMESPACE \\"
-        echo "    --from-literal=DROPBOX_APP_KEY=<app-key> \\"
-        echo "    --from-literal=DROPBOX_APP_SECRET=<app-secret>"
-    else
-        log_info "dropbox-secrets already exists (not overwriting)"
-    fi
-
-    # Create dropbox-token if it doesn't exist (won't overwrite existing)
-    if ! kubectl get secret dropbox-token -n "$NAMESPACE" &>/dev/null; then
-        log_warn "dropbox-token not found. Create it with:"
-        echo "  kubectl create secret generic dropbox-token -n $NAMESPACE \\"
-        echo "    --from-file=dropbox_token.json=<path-to-token-file>"
-    else
-        log_info "dropbox-token already exists (not overwriting)"
-    fi
 
     log_step "Restarting deployments to pick up new images..."
     kubectl rollout restart deployment -n "$NAMESPACE"
@@ -232,6 +255,7 @@ main() {
     fi
 
     apply_manifests
+    create_secrets
     wait_for_pods
     print_status
 }

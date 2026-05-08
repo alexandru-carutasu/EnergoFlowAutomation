@@ -100,6 +100,9 @@ class FileProcessator:
             if result:
                 logging.error(f"Failed to store measurements: {result}")
             else:
+                # Upload original email file to /out (forecast) or /in (production)
+                self._upload_email_file_to_dropbox(local_file_path, file_name, client_name, tag)
+
                 # Update evaluation files on Dropbox after successful DB storage
                 curr_date = dt.now()
                 self._update_evaluation_files(client_name, client_id, curr_date, tag)
@@ -110,6 +113,29 @@ class FileProcessator:
                 os.remove(local_file_path)
             except OSError:
                 pass
+
+    def _upload_email_file_to_dropbox(
+        self, local_file_path: str, original_filename: str, client_name: str, tag: str
+    ) -> None:
+        """Upload the original email attachment to Dropbox /out or /in folder."""
+        try:
+            if tag == FORECAST_TAG:
+                dropbox_folder = f"/Forecast Automat/{client_name}/out"
+            elif tag == IBD_TAG:
+                dropbox_folder = f"/Forecast Automat/{client_name}/in"
+            else:
+                logging.warning(f"Unknown tag {tag}, skipping Dropbox upload")
+                return
+
+            result = self.dropbox_client.upload_excel_to_dropbox(
+                local_file_path, dropbox_folder, original_filename
+            )
+            if result:
+                logging.info(f"Uploaded {original_filename} to {dropbox_folder}")
+            else:
+                logging.error(f"Failed to upload {original_filename} to Dropbox")
+        except Exception as e:
+            logging.error(f"Error uploading email file to Dropbox: {e}")
 
     def _store_measurements_into_db(
         self, file_path: str, client_id: Optional[int], tag: str
