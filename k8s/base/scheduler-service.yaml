@@ -68,9 +68,13 @@ spec:
                   name: dropbox-secrets
                   key: DROPBOX_APP_SECRET
             - name: DROPBOX_TOKEN_FILE
-              value: "/app/dropbox_token.json"
+              value: "/app/secrets/dropbox_token.json"
             - name: DROPBOX_EVAL_FILE_PATH
               value: "/app/downloads"
+          volumeMounts:
+            - name: dropbox-token
+              mountPath: /app/secrets
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /health
@@ -90,6 +94,10 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "250m"
+      volumes:
+        - name: dropbox-token
+          secret:
+            secretName: dropbox-token
 ---
 apiVersion: v1
 kind: Service

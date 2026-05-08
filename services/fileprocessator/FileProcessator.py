@@ -99,6 +99,10 @@ class FileProcessator:
             result = self._store_measurements_into_db(local_file_path, client_id, tag)
             if result:
                 logging.error(f"Failed to store measurements: {result}")
+            else:
+                # Update evaluation files on Dropbox after successful DB storage
+                curr_date = dt.now()
+                self._update_evaluation_files(client_name, client_id, curr_date, tag)
         except Exception as e:
             logging.error(f"Error processing file {file_name}: {e}", exc_info=True)
         finally:
@@ -313,10 +317,10 @@ class FileProcessator:
         except Exception as e:
             logging.error(f"Error creating evaluation file: {e}")
 
-    def _update_evaluation_files(self, client_name: str, client_id: int, curr_date: Any) -> None:
+    def _update_evaluation_files(self, client_name: str, client_id: int, curr_date: Any, tag: str) -> None:
         """Update evaluation files via EvalFileManager."""
         try:
-            self.eval_file_manager.update_evaluation_files(client_name, client_id, curr_date)
+            self.eval_file_manager.update_evaluation_files(client_name, client_id, curr_date, tag)
             logging.info(f"Updated evaluation files for {client_name}")
         except Exception as e:
             logging.error(f"Error updating evaluation files: {e}")

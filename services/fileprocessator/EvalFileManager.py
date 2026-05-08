@@ -14,6 +14,7 @@ from typing import Optional, List
 import pandas as pd
 from openpyxl import load_workbook
 
+from config import FORECAST_TAG, IBD_TAG
 from services.dropboxclient.DropboxClient import DropboxClient
 from services.dbmanager.DbManager import DbManager
 
@@ -26,6 +27,8 @@ class EvalFileManager:
     EVAL_FILE_PREFIX = "Evaluare_"
     EVAL_FILE_SUFFIX = ".xlsx"
     EVAL_FOLDER_TEMPLATE = "/Forecast automat/{client_name}"
+    EVAL_FOLDER_OUT = "/Forecast automat/{client_name}/out"  # For forecast
+    EVAL_FOLDER_IN = "/Forecast automat/{client_name}/in"    # For production (IBD)
     TEMPLATE_FOLDER = "/Forecast automat/Template"
     TEMPLATE_FILE_NAME = "Evaluare_template.xlsx"
 
@@ -114,7 +117,7 @@ class EvalFileManager:
             return False
 
     def update_evaluation_files(
-        self, client_name: str, client_id: int, curr_date: dt
+        self, client_name: str, client_id: int, curr_date: dt, tag: str
     ) -> bool:
         """Update evaluation files for multi-plant client.
 
@@ -126,13 +129,15 @@ class EvalFileManager:
             Client ID
         curr_date : datetime
             Current date
+        tag : str
+            Tag indicating file type (FORECAST_TAG or IBD_TAG)
 
         Returns
         -------
         bool
             True if successful
         """
-        logging.info(f"Updating evaluation files for {client_name}")
+        logging.info(f"Updating evaluation files for {client_name} (tag: {tag})")
         try:
             # Download existing evaluation file
             formatted_date = curr_date.strftime("%m%Y")
@@ -148,14 +153,20 @@ class EvalFileManager:
             for plant in plants:
                 self._update_plant_sheet(eval_file_path, plant.id, plant.name, curr_date)
 
-            # Upload updated file
-            dropbox_folder = self.EVAL_FOLDER_TEMPLATE.format(client_name=client_name)
+            # Upload to folder based on tag: /out for forecast, /in for production
+            if tag == FORECAST_TAG:
+                dropbox_folder = self.EVAL_FOLDER_OUT.format(client_name=client_name)
+            elif tag == IBD_TAG:
+                dropbox_folder = self.EVAL_FOLDER_IN.format(client_name=client_name)
+            else:
+                dropbox_folder = self.EVAL_FOLDER_TEMPLATE.format(client_name=client_name)
+
             upload_result = self.dropbox_client.upload_excel_to_dropbox(
                 eval_file_path, dropbox_folder
             )
 
             if upload_result:
-                logging.info(f"Successfully updated evaluation file for {client_name}")
+                logging.info(f"Successfully updated evaluation file for {client_name} to {dropbox_folder}")
                 try:
                     os.remove(eval_file_path)
                 except OSError:
