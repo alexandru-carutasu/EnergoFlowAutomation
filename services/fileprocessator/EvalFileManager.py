@@ -340,7 +340,7 @@ class EvalFileManager:
         plant_names : List[str]
             List of plant names (sheet names)
         date_str : str
-            Date in MMYYYY format
+            Date in MMYYYY format (e.g., "052026")
 
         Returns
         -------
@@ -373,6 +373,9 @@ class EvalFileManager:
                     workbook[old_name].title = plant_name
                     logging.info(f"Renamed sheet '{old_name}' to '{plant_name}'")
 
+            # Populate date and interval columns for each plant sheet
+            self._populate_date_interval_columns(workbook, plant_names, date_str)
+
             # Save file
             workbook.save(output_file_name)
             logging.info(f"Created evaluation file: {output_file_name} with sheets: {workbook.sheetnames}")
@@ -381,6 +384,118 @@ class EvalFileManager:
         except Exception as e:
             logging.error(f"Error creating evaluation file from template: {e}")
             return None
+
+    def _populate_date_interval_columns(
+        self, workbook, plant_names: List[str], date_str: str
+    ) -> None:
+        """Populate date and interval columns for each plant sheet.
+
+        Creates rows for every 15-minute interval of the month.
+
+        Parameters
+        ----------
+        workbook : Workbook
+            openpyxl workbook object
+        plant_names : List[str]
+            List of plant sheet names
+        date_str : str
+            Date in MMYYYY format (e.g., "052026")
+        """
+        import calendar
+
+        # Parse month and year from date_str (MMYYYY format)
+        month = int(date_str[:2])
+        year = int(date_str[2:])
+
+        # Get number of days in month
+        _, days_in_month = calendar.monthrange(year, month)
+
+        # Generate all 15-minute intervals for the month
+        intervals = []
+        for day in range(1, days_in_month + 1):
+            date_val = dt(year, month, day).date()
+            for hour in range(24):
+                for minute in [0, 15, 30, 45]:
+                    time_str = f"{hour:02d}:{minute:02d}"
+                    intervals.append((date_val, time_str))
+
+        logging.info(f"Generating {len(intervals)} rows for {month}/{year} ({days_in_month} days)")
+
+        # Populate each plant sheet
+        for plant_name in plant_names:
+            if plant_name not in workbook.sheetnames:
+                logging.warning(f"Sheet {plant_name} not found in workbook")
+                continue
+
+            sheet = workbook[plant_name]
+            start_row = 4  # Data starts at row 4
+
+            for idx, (date_val, time_str) in enumerate(intervals):
+                row = start_row + idx
+                sheet.cell(row=row, column=1, value=date_val)
+                sheet.cell(row=row, column=2, value=time_str)
+
+            logging.info(f"Populated {len(intervals)} date/interval rows in sheet {plant_name}")
+
+    def _ensure_date_interval_populated(
+        self, file_path: str, sheet_name: str, curr_date: dt
+    ) -> None:
+        """Ensure date and interval columns are populated in a sheet.
+
+        If row 4 column 1 is empty, populates the entire month's dates/intervals.
+
+        Parameters
+        ----------
+        file_path : str
+            Path to Excel file
+        sheet_name : str
+            Sheet name to check/populate
+        curr_date : datetime
+            Current date (used to determine month)
+        """
+        import calendar
+
+        try:
+            workbook = load_workbook(file_path)
+
+            if sheet_name not in workbook.sheetnames:
+                logging.warning(f"Sheet {sheet_name} not found for date/interval population")
+                return
+
+            sheet = workbook[sheet_name]
+
+            # Check if dates are already populated (row 4, column 1)
+            if sheet.cell(row=4, column=1).value is not None:
+                logging.info(f"Sheet {sheet_name} already has date/interval data")
+                return
+
+            # Get month/year from current date
+            month = curr_date.month
+            year = curr_date.year
+            _, days_in_month = calendar.monthrange(year, month)
+
+            # Generate all 15-minute intervals for the month
+            intervals = []
+            for day in range(1, days_in_month + 1):
+                date_val = dt(year, month, day).date()
+                for hour in range(24):
+                    for minute in [0, 15, 30, 45]:
+                        time_str = f"{hour:02d}:{minute:02d}"
+                        intervals.append((date_val, time_str))
+
+            logging.info(f"Populating {len(intervals)} date/interval rows in sheet {sheet_name}")
+
+            start_row = 4
+            for idx, (date_val, time_str) in enumerate(intervals):
+                row = start_row + idx
+                sheet.cell(row=row, column=1, value=date_val)
+                sheet.cell(row=row, column=2, value=time_str)
+
+            workbook.save(file_path)
+            logging.info(f"Saved sheet {sheet_name} with populated date/interval columns")
+
+        except Exception as e:
+            logging.error(f"Error ensuring date/interval populated for {sheet_name}: {e}")
 
     def _update_plant_sheet(
         self, eval_file_path: str, plant_id: int, plant_name: str, curr_date: dt
@@ -405,6 +520,9 @@ class EvalFileManager:
         """
         try:
             logging.info(f"Updating sheet for plant: {plant_name}")
+
+            # Check if date/interval columns need to be populated
+            self._ensure_date_interval_populated(eval_file_path, plant_name, curr_date)
 
             # Get measurements for plant from start of month
             start_of_month = curr_date.replace(day=1)
@@ -442,9 +560,8 @@ class EvalFileManager:
             dfMeas = pd.DataFrame(meas_data)
             logging.info(f"Measurements dataframe shape: {dfMeas.shape}, dates: {dfMeas['data'].unique()[:5]}")
 
-            # Get imbalance prices for all dates
-            all_dates = dfMeas["data"].unique()
-            df_prices = self._get_imbalance_prices(all_dates, start_date)
+            # Get imbalance prices for current month
+            df_prices = self._get_imbalance_prices(start_date)
 
             # Merge measurements with prices
             dfAll = pd.merge(dfMeas, df_prices, on=["data", "timp"], how="outer")
@@ -463,13 +580,11 @@ class EvalFileManager:
             logging.error(f"Error updating plant sheet {plant_name}: {e}", exc_info=True)
             return False
 
-    def _get_imbalance_prices(self, dates: List, start_date) -> pd.DataFrame:
-        """Get imbalance prices for given dates.
+    def _get_imbalance_prices(self, start_date) -> pd.DataFrame:
+        """Get imbalance prices from start date onwards.
 
         Parameters
         ----------
-        dates : List
-            List of dates
         start_date : date
             Start date filter
 
@@ -537,7 +652,7 @@ class EvalFileManager:
                 return False
 
             sheet = workbook[sheet_name]
-            start_row = 4  # Assuming data starts at row 4
+            start_row = 4  # Data starts at row 4
 
             # Log first few rows to debug
             logging.info(f"Sheet {sheet_name} row 4 col 1: {sheet.cell(row=4, column=1).value}, col 2: {sheet.cell(row=4, column=2).value}")
@@ -552,19 +667,26 @@ class EvalFileManager:
                 and start_row < 3000
             ):
                 # Get date and time from sheet
-                data = sheet.cell(row=start_row, column=1).value
+                sheet_date = sheet.cell(row=start_row, column=1).value
                 timp_cell = sheet.cell(row=start_row, column=2).value
 
-                if not data or not timp_cell:
+                if not sheet_date or not timp_cell:
                     start_row += 1
                     continue
 
                 timp = str(timp_cell)[:5]  # HH:MM format
 
-                # Find matching row in dataframe
+                # Normalize sheet date to date object for comparison
+                if isinstance(sheet_date, dt):
+                    sheet_date_normalized = sheet_date.date()
+                elif hasattr(sheet_date, 'date'):
+                    sheet_date_normalized = sheet_date
+                else:
+                    sheet_date_normalized = dt.strptime(str(sheet_date)[:10], "%Y-%m-%d").date()
+
+                # Find matching row in dataframe using normalized date comparison
                 matching_rows = df_all[
-                    (df_all["data"].astype(str) == str(data))
-                    & (df_all["timp"] == timp)
+                    (df_all["data"] == sheet_date_normalized) & (df_all["timp"] == timp)
                 ]
 
                 if not matching_rows.empty:
