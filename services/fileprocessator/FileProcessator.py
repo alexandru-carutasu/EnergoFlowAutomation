@@ -106,6 +106,9 @@ class FileProcessator:
                 # Update evaluation files on Dropbox after successful DB storage
                 curr_date = dt.now()
                 self._update_evaluation_files(client_name, client_id, curr_date, tag)
+
+                # Delete email after successful processing
+                self._del_email(curr_email)
         except Exception as e:
             logging.error(f"Error processing file {file_name}: {e}", exc_info=True)
         finally:
@@ -367,23 +370,28 @@ class FileProcessator:
         except Exception as e:
             logging.error(f"Error updating plant evaluation: {e}")
 
-    def _del_email(self, uid: int) -> None:
+    def _del_email(self, uid) -> None:
         """Delete email by UID using IMAP."""
         try:
-            # Convert UID to bytes if needed
-            uid_str = str(uid).encode() if isinstance(uid, int) else uid
+            # Ensure UID is bytes for IMAP command
+            if isinstance(uid, int):
+                uid_bytes = str(uid).encode()
+            elif isinstance(uid, str):
+                uid_bytes = uid.encode()
+            else:
+                uid_bytes = uid  # Already bytes
 
             # Connect to IMAP server
             mail = imaplib.IMAP4_SSL(IMAP_SERVER)
             mail.login(IMAP_USER, IMAP_PASSWORD)
             mail.select("INBOX")
 
-            # Mark email as deleted
-            mail.store(uid_str, "+FLAGS", "\\Deleted")
+            # Mark email as deleted using UID command
+            mail.uid('STORE', uid_bytes, '+FLAGS', '\\Deleted')
             mail.expunge()
             mail.close()
             mail.logout()
 
-            logging.info(f"Deleted email with UID {uid}")
+            logging.info(f"Deleted email with UID {uid_bytes}")
         except Exception as e:
             logging.error(f"Error deleting email {uid}: {e}")
