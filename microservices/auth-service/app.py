@@ -29,6 +29,7 @@ DB_URL = os.getenv("DB_SERVICE_URL", "http://db-service:5003")
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _db_get(path):
     try:
         return requests.get(f"{DB_URL}{path}", timeout=5)
