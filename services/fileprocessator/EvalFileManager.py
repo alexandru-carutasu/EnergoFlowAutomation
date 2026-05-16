@@ -9,9 +9,10 @@ import logging
 import os
 import tempfile
 from datetime import datetime as dt, timedelta
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 import pandas as pd
+import pytz
 from openpyxl import load_workbook
 
 from config import FORECAST_TAG, IBD_TAG
@@ -24,6 +25,9 @@ logger = logging.getLogger(__name__)
 class EvalFileManager:
     """Manages evaluation file creation and updates."""
 
+    LOCAL_TZ = pytz.timezone("Europe/Bucharest")
+    UTC_TZ = pytz.utc
+
     EVAL_FILE_PREFIX = "Evaluare_"
     EVAL_FILE_SUFFIX = ".xlsx"
     EVAL_FOLDER_TEMPLATE = "/Forecast Automat/{client_name}"
@@ -35,6 +39,28 @@ class EvalFileManager:
     def __init__(self, db_manager: DbManager, dropbox_client: DropboxClient) -> None:
         self.db_manager = db_manager
         self.dropbox_client = dropbox_client
+
+    def _convert_utc_to_local(self, utc_date, utc_interval: str) -> Tuple[any, str]:
+        """Convert UTC date and interval to local time (Europe/Bucharest).
+
+        Args:
+            utc_date: Date object (UTC)
+            utc_interval: Time interval string like "08:00" (UTC)
+
+        Returns:
+            Tuple of (local_date, local_interval_string)
+        """
+        if isinstance(utc_date, dt):
+            base_date = utc_date.date()
+        else:
+            base_date = utc_date
+
+        interval_time = dt.strptime(utc_interval, "%H:%M").time()
+        utc_naive = dt.combine(base_date, interval_time)
+        utc_dt = self.UTC_TZ.localize(utc_naive)
+        local_dt = utc_dt.astimezone(self.LOCAL_TZ)
+
+        return local_dt.date(), local_dt.strftime("%H:%M")
 
     def create_evaluation_file(
         self, client_id: int, client_name: str, date_str: str
@@ -548,10 +574,13 @@ class EvalFileManager:
                 if isinstance(m_date, str):
                     m_date = dt.strptime(m_date, "%Y-%m-%d").date()
 
+                # Convert UTC to local time for matching with Excel file
+                local_date, local_interval = self._convert_utc_to_local(m_date, m.interval)
+
                 meas_data.append(
                     {
-                        "data": m_date,
-                        "timp": m.interval,
+                        "data": local_date,
+                        "timp": local_interval,
                         "productionmw": m.prod_val,
                         "forecastmw": m.forecast_val,
                     }
@@ -606,10 +635,13 @@ class EvalFileManager:
                 if isinstance(price_date, str):
                     price_date = dt.strptime(price_date, "%Y-%m-%d").date()
 
+                # Convert UTC to local time for matching with Excel file
+                local_date, local_interval = self._convert_utc_to_local(price_date, price.interval)
+
                 price_data.append(
                     {
-                        "data": price_date,
-                        "timp": price.interval,
+                        "data": local_date,
+                        "timp": local_interval,
                         "positive_price": price.positive_imbalance,
                         "negative_price": price.negative_imbalance,
                     }
