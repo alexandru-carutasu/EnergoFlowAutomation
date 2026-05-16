@@ -20,8 +20,6 @@ from config import IMAP_ADDRESS, IMAP_PASSWORD, IMAP_PORT, IMAP_SERVER
 
 sys.path.insert(0, "/app")
 
-
-
 logging.basicConfig(
     format="%(levelname)s: [%(asctime)s]:: %(message)s",
     level=logging.INFO,

@@ -27,7 +27,6 @@ JWT_ALGORITHM = "HS256"
 JWT_TTL_HOURS = 24
 DB_URL = os.getenv("DB_SERVICE_URL", "http://db-service:5003")
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _db_get(path):

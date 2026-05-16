@@ -4,17 +4,15 @@ Runs migrations on startup, then exposes all CRUD operations.
 Port: 5003
 """
 import logging
-import os
 import sys
-from datetime import date as date_type, datetime
+from datetime import datetime
 
 from flask import Flask, abort, jsonify, request
 from prometheus_flask_exporter import PrometheusMetrics
-
-sys.path.insert(0, "/app")
-from config import DATABASE_URL, DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER
 from migrate import run_migration
 from services.dbmanager.DbManager import DbManager
+
+sys.path.insert(0, "/app")
 
 logging.basicConfig(
     format="%(levelname)s: [%(asctime)s]:: %(message)s",
