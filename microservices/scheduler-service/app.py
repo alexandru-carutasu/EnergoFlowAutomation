@@ -8,26 +8,19 @@ import os
 import sys
 from datetime import datetime
 from typing import Any, List, Optional
+from services.emailclient.EmailClient import EmailClient
+from services.fileprocessator.FileProcessator import FileProcessator
+from services.importclient.ImportClient import ImportClient
 
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify
 from prometheus_flask_exporter import PrometheusMetrics
+from config import IMAP_ADDRESS, IMAP_PASSWORD, IMAP_PORT, IMAP_SERVER
 
 sys.path.insert(0, "/app")
-from config import (
-    DROPBOX_APP_KEY,
-    DROPBOX_APP_SECRET,
-    DROPBOX_EVAL_FILE_PATH,
-    DROPBOX_TOKEN_FILE,
-    IMAP_ADDRESS,
-    IMAP_PASSWORD,
-    IMAP_PORT,
-    IMAP_SERVER,
-)
-from services.emailclient.EmailClient import EmailClient
-from services.fileprocessator.FileProcessator import FileProcessator
-from services.importclient.ImportClient import ImportClient
+
+
 
 logging.basicConfig(
     format="%(levelname)s: [%(asctime)s]:: %(message)s",
