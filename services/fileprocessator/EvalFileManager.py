@@ -757,12 +757,12 @@ class EvalFileManager:
                     ).value:
                         sheet.cell(row=start_row, column=3, value=prod_val)
 
-                    # Write forecast
+                    # Write forecast (convert MWh to MW by multiplying by 4)
                     fcst_val = row_data.get("forecastmw")
                     if fcst_val is not None and fcst_val != sheet.cell(
                         row=start_row, column=6
                     ).value:
-                        sheet.cell(row=start_row, column=6, value=fcst_val)
+                        sheet.cell(row=start_row, column=6, value=fcst_val * 4)
 
                     # Write positive price
                     pos_price = row_data.get("positive_price")
