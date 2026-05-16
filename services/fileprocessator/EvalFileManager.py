@@ -62,6 +62,29 @@ class EvalFileManager:
 
         return local_dt.date(), local_dt.strftime("%H:%M")
 
+    def _update_chart_references(self, sheet, old_name: str, new_name: str) -> None:
+        """Update chart series references when sheet is renamed.
+
+        Args:
+            sheet: Worksheet object
+            old_name: Old sheet name to replace
+            new_name: New sheet name
+        """
+        if not hasattr(sheet, '_charts') or not sheet._charts:
+            return
+
+        old_ref = f"'{old_name}'"
+        new_ref = f"'{new_name}'"
+
+        for chart in sheet._charts:
+            for series in chart.series:
+                if series.val and series.val.numRef and series.val.numRef.f:
+                    series.val.numRef.f = series.val.numRef.f.replace(old_ref, new_ref)
+                if series.cat and series.cat.numRef and series.cat.numRef.f:
+                    series.cat.numRef.f = series.cat.numRef.f.replace(old_ref, new_ref)
+
+        logging.info(f"Updated chart references from '{old_name}' to '{new_name}'")
+
     def create_evaluation_file(
         self, client_id: int, client_name: str, date_str: str
     ) -> bool:
@@ -396,7 +419,9 @@ class EvalFileManager:
                 sheet_index = i + 1  # skip summary at index 0
                 if sheet_index < len(workbook.sheetnames):
                     old_name = workbook.sheetnames[sheet_index]
-                    workbook[old_name].title = plant_name
+                    sheet = workbook[old_name]
+                    self._update_chart_references(sheet, old_name, plant_name)
+                    sheet.title = plant_name
                     logging.info(f"Renamed sheet '{old_name}' to '{plant_name}'")
 
             # Populate date and interval columns for each plant sheet
