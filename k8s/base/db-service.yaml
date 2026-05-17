@@ -18,10 +18,12 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "5003"
     spec:
+      imagePullSecrets:
+        - name: gitlab-auth
       containers:
         - name: db-service
           image: energoflow/db-service:local
-          imagePullPolicy: Never
+          imagePullPolicy: Always
           ports:
             - containerPort: 5003
           envFrom:

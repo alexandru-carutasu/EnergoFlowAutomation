@@ -1,10 +1,12 @@
 stages:
   - build
   - test
+  - deploy
 
 variables:
   REGISTRY: $CI_REGISTRY_IMAGE
   VERSION: $CI_COMMIT_SHORT_SHA
+  NAMESPACE: energoflow
 
 # ── Reusable Kaniko build template ────────────────────────────────────────────
 .kaniko_build:
@@ -61,3 +63,35 @@ test:lint:
   only:
     - main
     - merge_requests
+
+# ── Deploy stage ──────────────────────────────────────────────────────────────
+deploy_to_azure:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "$KUBECONFIG_CONTENT" > ~/.kube/config
+    - kubectl get nodes
+  script:
+    - kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
+    - kubectl create secret docker-registry gitlab-auth \
+        --docker-server=$CI_REGISTRY \
+        --docker-username="gitlab+deploy-token-38" \
+        --docker-password=$GITLAB_DEPLOY_PASSWORD \
+        -n $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
+    - kubectl apply -f k8s/base/ -n $NAMESPACE
+
+    - kubectl set image deployment/api-service api-service=$REGISTRY/api-service:$VERSION -n $NAMESPACE
+    - kubectl set image deployment/auth-service auth-service=$REGISTRY/auth-service:$VERSION -n $NAMESPACE
+    - kubectl set image deployment/db-service db-service=$REGISTRY/db-service:$VERSION -n $NAMESPACE
+    - kubectl set image deployment/scheduler-service scheduler-service=$REGISTRY/scheduler-service:$VERSION -n $NAMESPACE
+
+    - kubectl rollout status deployment/api-service -n $NAMESPACE --timeout=120s
+    - kubectl rollout status deployment/auth-service -n $NAMESPACE --timeout=120s
+    - kubectl rollout status deployment/db-service -n $NAMESPACE --timeout=120s
+    - kubectl rollout status deployment/scheduler-service -n $NAMESPACE --timeout=120s
+  only:
+    - main
+  when: manual
