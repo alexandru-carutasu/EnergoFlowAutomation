@@ -67,7 +67,7 @@ test:lint:
 # ── Deploy stage ──────────────────────────────────────────────────────────────
 deploy_to_azure:
   stage: deploy
-  image: bitnami/kubectl:latest
+  image: dtzar/helm-kubectl:latest
   before_script:
     - mkdir -p ~/.kube
     - echo "$KUBECONFIG_CONTENT" > ~/.kube/config
